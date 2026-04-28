@@ -66,17 +66,39 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Test CLI in container
+        env:
+          DATASPHERE_BASE_URL: ${{ secrets.DATASPHERE_BASE_URL }}
+          DATASPHERE_CLIENT_ID: ${{ secrets.DATASPHERE_CLIENT_ID }}
+          DATASPHERE_CLIENT_SECRET: ${{ secrets.DATASPHERE_CLIENT_SECRET }}
+          DATASPHERE_TOKEN_URL: ${{ secrets.DATASPHERE_TOKEN_URL }}
         run: |
           docker pull ghcr.io/${{ github.repository }}:latest
+          IMAGE="ghcr.io/${{ github.repository }}:latest"
 
           echo "=== Node.js version ==="
-          docker run --rm --entrypoint node ghcr.io/${{ github.repository }}:latest --version
+          docker run --rm --entrypoint node $IMAGE --version
 
           echo "=== Datasphere CLI version ==="
-          docker run --rm --entrypoint datasphere ghcr.io/${{ github.repository }}:latest --version
+          docker run --rm --entrypoint datasphere $IMAGE --version
 
           echo "=== Python server imports ==="
-          docker run --rm --entrypoint python ghcr.io/${{ github.repository }}:latest -c "import sap_datasphere_mcp_server; print('OK')"
+          docker run --rm --entrypoint python $IMAGE -c "import sap_datasphere_mcp_server; print('OK')"
+
+          echo "=== Test CLI with auth: list task chains ==="
+          docker run --rm \
+            -e DATASPHERE_BASE_URL \
+            -e DATASPHERE_CLIENT_ID \
+            -e DATASPHERE_CLIENT_SECRET \
+            -e DATASPHERE_TOKEN_URL \
+            $IMAGE sh -c "
+              datasphere login \
+                -d client_credentials \
+                -H \$DATASPHERE_BASE_URL \
+                -T \$DATASPHERE_TOKEN_URL \
+                -c \$DATASPHERE_CLIENT_ID \
+                -C \$DATASPHERE_CLIENT_SECRET && \
+              datasphere objects task-chains list --space DW_SYNTAX --top 5
+            "
 
   deploy:
     needs: [build-and-push, test]
