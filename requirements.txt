@@ -1,5 +1,5 @@
 # Model Context Protocol
-mcp>=0.9.0
+mcp>=1.8.0
 
 # Core Web Framework (updated for anyio>=4.5 compatibility with MCP)
 fastapi>=0.115.0

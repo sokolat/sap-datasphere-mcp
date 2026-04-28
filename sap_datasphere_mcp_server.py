@@ -69,6 +69,11 @@ _TASK_MONITORING_TOOLS = {
     "get_task_log",
     "get_task_history",
     "list_task_chains",
+    "read_graphical_view",
+    "list_graphical_views",
+    "delete_graphical_view",
+    "create_graphical_view",
+    "update_graphical_view",
 }
 
 # Configure logging
@@ -1106,6 +1111,31 @@ async def handle_list_tools() -> list[Tool]:
             name="list_task_chains",
             description=enhanced["list_task_chains"]["description"],
             inputSchema=enhanced["list_task_chains"]["inputSchema"]
+        ),
+        Tool(
+            name="read_graphical_view",
+            description=enhanced["read_graphical_view"]["description"],
+            inputSchema=enhanced["read_graphical_view"]["inputSchema"]
+        ),
+        Tool(
+            name="list_graphical_views",
+            description=enhanced["list_graphical_views"]["description"],
+            inputSchema=enhanced["list_graphical_views"]["inputSchema"]
+        ),
+        Tool(
+            name="delete_graphical_view",
+            description=enhanced["delete_graphical_view"]["description"],
+            inputSchema=enhanced["delete_graphical_view"]["inputSchema"]
+        ),
+        Tool(
+            name="create_graphical_view",
+            description=enhanced["create_graphical_view"]["description"],
+            inputSchema=enhanced["create_graphical_view"]["inputSchema"]
+        ),
+        Tool(
+            name="update_graphical_view",
+            description=enhanced["update_graphical_view"]["description"],
+            inputSchema=enhanced["update_graphical_view"]["inputSchema"]
         )
         # Phase 6 & 7 tools removed - endpoints not available as REST APIs (return HTML instead of JSON)
     ]
@@ -7820,7 +7850,2387 @@ async def _execute_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     text=f"Error listing task chains: {str(e)}"
                 )]
 
+    elif name == "read_graphical_view":
+        space_id = arguments["space_id"]
+        view_id = arguments["view_id"]
+        accept = arguments.get("accept", "application/vnd.sap.datasphere.object.content+json")
 
+        try:
+            import asyncio
+            cmd = [
+                "datasphere", "objects", "views", "read",
+                "--space", space_id,
+                "--technical-name", view_id,
+                "--accept", accept,
+            ]
+            logger.info(f"Running CLI: {' '.join(cmd)}")
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
+
+            if process.returncode != 0:
+                err = stderr.decode().strip() if stderr else ""
+                out = stdout.decode().strip() if stdout else ""
+                error_msg = err or out or "Unknown error"
+                logger.error(f"CLI error reading view: {error_msg}")
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error reading view '{view_id}' in space '{space_id}': {error_msg}"
+                )]
+
+            output = stdout.decode().strip()
+            if not output:
+                return [types.TextContent(
+                    type="text",
+                    text=f"View '{view_id}' not found in space '{space_id}'."
+                )]
+
+            try:
+                view_data = json.loads(output)
+                return [types.TextContent(
+                    type="text",
+                    text=f"View '{view_id}' in space '{space_id}':\n\n{json.dumps(view_data, indent=2)}"
+                )]
+            except json.JSONDecodeError:
+                return [types.TextContent(
+                    type="text",
+                    text=f"View '{view_id}' in space '{space_id}':\n\n{output}"
+                )]
+
+        except asyncio.TimeoutError:
+            logger.error("CLI command timed out")
+            return [types.TextContent(
+                type="text",
+                text="Error: Datasphere CLI command timed out after 60 seconds."
+            )]
+        except FileNotFoundError:
+            logger.error("Datasphere CLI not found")
+            return [types.TextContent(
+                type="text",
+                text="Error: 'datasphere' CLI not found. Make sure it is installed and available in PATH."
+            )]
+        except Exception as e:
+            logger.error(f"Error reading view via CLI: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error reading view: {str(e)}"
+            )]
+
+    elif name == "list_graphical_views":
+        space_id = arguments["space_id"]
+        top = arguments.get("top", 25)
+        skip = arguments.get("skip", 0)
+        filter_expr = arguments.get("filter")
+        technical_names = arguments.get("technical_names")
+
+        try:
+            import asyncio
+            cmd = [
+                "datasphere", "objects", "views", "list",
+                "--space", space_id,
+                "--top", str(top),
+                "--skip", str(skip),
+                "--select", "technicalName,status",
+            ]
+            if filter_expr:
+                cmd.extend(["--filter", filter_expr])
+            if technical_names:
+                cmd.extend(["--technical-names", technical_names])
+            logger.info(f"Running CLI: {' '.join(cmd)}")
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+
+            if process.returncode != 0:
+                err = stderr.decode().strip() if stderr else ""
+                out = stdout.decode().strip() if stdout else ""
+                error_msg = err or out or "Unknown error"
+                logger.error(f"CLI error listing views: {error_msg}")
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error listing views in space '{space_id}': {error_msg}"
+                )]
+
+            output = stdout.decode().strip()
+            if not output:
+                return [types.TextContent(
+                    type="text",
+                    text=f"No views found in space '{space_id}'."
+                )]
+
+            try:
+                views = json.loads(output)
+            except json.JSONDecodeError:
+                return [types.TextContent(
+                    type="text",
+                    text=f"Views in space '{space_id}':\n\n{output}"
+                )]
+
+            view_names = []
+            if isinstance(views, list):
+                for v in views:
+                    if isinstance(v, dict):
+                        view_names.append({
+                            "name": v.get("technicalName", v.get("name", "unknown")),
+                            "status": v.get("status", "unknown")
+                        })
+                    else:
+                        view_names.append({"name": str(v), "status": "unknown"})
+
+            result = {
+                "space_id": space_id,
+                "views": view_names,
+                "count": len(view_names),
+                "skip": skip,
+                "top": top,
+                "has_more": len(view_names) == top
+            }
+
+            return [types.TextContent(
+                type="text",
+                text=f"Views in space '{space_id}' ({len(view_names)} found):\n\n{json.dumps(result, indent=2)}"
+            )]
+
+        except asyncio.TimeoutError:
+            logger.error("CLI command timed out")
+            return [types.TextContent(
+                type="text",
+                text="Error: Datasphere CLI command timed out after 30 seconds."
+            )]
+        except FileNotFoundError:
+            logger.error("Datasphere CLI not found")
+            return [types.TextContent(
+                type="text",
+                text="Error: 'datasphere' CLI not found. Make sure it is installed and available in PATH."
+            )]
+        except Exception as e:
+            logger.error(f"Error listing views via CLI: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error listing views: {str(e)}"
+            )]
+
+    elif name == "create_graphical_view":
+        space_id = arguments["space_id"]
+        view_id = arguments["view_id"]
+        source_object = arguments["source_object"]
+        node_type = arguments.get("node_type", "PROJECTION")
+        columns = arguments.get("columns")
+        description = arguments.get("description", "")
+        semantic_usage = arguments.get("semantic_usage", "FACT")
+        expose_for_consumption = arguments.get("expose_for_consumption", True)
+        deploy = arguments.get("deploy", False)
+
+        import asyncio
+        import uuid
+        import tempfile
+        import os as _os
+
+        def _new_id():
+            return str(uuid.uuid4())
+
+        # If no columns provided, fetch source schema via CLI to pass all through
+        if not columns:
+            try:
+                src_cmd = [
+                    "datasphere", "objects", "views", "read",
+                    "--space", space_id, "--technical-name", source_object,
+                ]
+                src_proc = await asyncio.create_subprocess_exec(
+                    *src_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                src_stdout, src_stderr = await asyncio.wait_for(src_proc.communicate(), timeout=60)
+
+                if src_proc.returncode != 0:
+                    err = src_stderr.decode().strip() or src_stdout.decode().strip() or "Unknown error"
+                    return [types.TextContent(
+                        type="text",
+                        text=f"Could not read source object '{source_object}': {err}\n"
+                             f"Please provide 'columns' array explicitly."
+                    )]
+
+                src_def = json.loads(src_stdout.decode())
+                src_elements = src_def.get("definitions", {}).get(source_object, {}).get("elements", {})
+                columns = []
+                for el_name, el_def in src_elements.items():
+                    cds_type = el_def.get("type", "cds.String")
+                    type_map = {
+                        "cds.String": "NVARCHAR", "cds.Integer": "INTEGER",
+                        "cds.Integer64": "BIGINT", "cds.Decimal": "DECIMAL",
+                        "cds.Double": "DOUBLE", "cds.Date": "DATE",
+                        "cds.Time": "TIME", "cds.Timestamp": "TIMESTAMP",
+                        "cds.Boolean": "BOOLEAN",
+                    }
+                    col = {
+                        "name": el_name,
+                        "dataType": type_map.get(cds_type, "NVARCHAR"),
+                        "label": el_def.get("@EndUserText.label", el_name),
+                    }
+                    if el_def.get("length"):
+                        col["length"] = el_def["length"]
+                    if el_def.get("precision"):
+                        col["precision"] = el_def["precision"]
+                    if el_def.get("scale"):
+                        col["scale"] = el_def["scale"]
+                    if el_def.get("key"):
+                        col["key"] = True
+                    columns.append(col)
+            except Exception as fetch_err:
+                return [types.TextContent(
+                    type="text",
+                    text=f"Could not fetch source schema: {fetch_err}\n"
+                         f"Please provide 'columns' array explicitly."
+                )]
+
+        if not columns:
+            return [types.TextContent(
+                type="text",
+                text=f"Source object '{source_object}' has no elements and no columns were provided."
+            )]
+
+        # Map semantic_usage to CSN modeling pattern and supported capabilities
+        modeling_patterns = {
+            "FACT": {"pattern": "ANALYTICAL_FACT", "capability": "ANALYTICAL_PROVIDER"},
+            "DIMENSION": {"pattern": "DATA_STRUCTURE", "capability": "DATA_STRUCTURE"},
+            "TEXT": {"pattern": "LANGUAGE_DEPENDENT_TEXT", "capability": "DATA_STRUCTURE"},
+        }
+        pattern_info = modeling_patterns.get(semantic_usage, modeling_patterns["FACT"])
+
+        # Build CSN query columns (projection from source)
+        query_columns = []
+        for col in columns:
+            query_columns.append({
+                "as": col["name"],
+                "ref": [source_object, col.get("source_column", col["name"])]
+            })
+
+        # Build CSN elements (output column definitions)
+        csn_elements = {}
+        for col in columns:
+            dtype = col["dataType"].upper()
+            col_def: Dict[str, Any] = {}
+            col_def["@EndUserText.label"] = col.get("label", col["name"])
+
+            if dtype == "NVARCHAR":
+                col_def["type"] = "cds.String"
+                col_def["length"] = col.get("length", 255)
+                col_def["@DataWarehouse.native.dataType"] = "NVARCHAR"
+            elif dtype == "INTEGER":
+                col_def["type"] = "cds.Integer"
+            elif dtype == "BIGINT":
+                col_def["type"] = "cds.Integer64"
+            elif dtype in ("DECIMAL", "DECFLOAT"):
+                col_def["type"] = "cds.Decimal"
+                col_def["precision"] = col.get("precision", 15)
+                col_def["scale"] = col.get("scale", 2)
+            elif dtype == "DOUBLE":
+                col_def["type"] = "cds.Double"
+            elif dtype == "DATE":
+                col_def["type"] = "cds.Date"
+            elif dtype == "TIME":
+                col_def["type"] = "cds.Time"
+            elif dtype == "TIMESTAMP":
+                col_def["type"] = "cds.Timestamp"
+            elif dtype == "BOOLEAN":
+                col_def["type"] = "cds.Boolean"
+            else:
+                col_def["type"] = "cds.String"
+                col_def["length"] = col.get("length", 255)
+
+            if col.get("key"):
+                col_def["key"] = True
+                col_def["notNull"] = True
+
+            if col.get("measure"):
+                col_def["@Analytics.measure"] = True
+                col_def["@Aggregation.default"] = {"#": col.get("aggregation", "SUM")}
+            else:
+                col_def["@Analytics.dimension"] = True
+
+            csn_elements[col["name"]] = col_def
+
+        view_definition = {
+            "kind": "entity",
+            "@EndUserText.label": description or view_id,
+            "@ObjectModel.modelingPattern": {"#": pattern_info["pattern"]},
+            "@ObjectModel.supportedCapabilities": [{"#": pattern_info["capability"]}],
+            "query": {
+                "SELECT": {
+                    "from": {"ref": [source_object]},
+                    "columns": query_columns
+                }
+            },
+            "elements": csn_elements,
+        }
+
+        if expose_for_consumption:
+            view_definition["@DataWarehouse.consumption.external"] = True
+
+        # Build editorSettings uiModel: Entity → Projection → Output chain
+        model_id = _new_id()
+        output_id = _new_id()
+        projection_id = _new_id()
+        entity_id = _new_id()
+        diagram_id = _new_id()
+
+        data_category_map = {
+            "FACT": "SQLFACT",
+            "DIMENSION": "DIMENSION",
+            "TEXT": "TEXT",
+        }
+        ui_data_category = data_category_map.get(semantic_usage, "SQLFACT")
+
+        output_elements = {}
+        projection_elements = {}
+        entity_elements = {}
+        ui_element_contents = {}
+
+        for i, col in enumerate(columns):
+            out_el_id = _new_id()
+            proj_el_id = _new_id()
+            ent_el_id = _new_id()
+            src_col = col.get("source_column", col["name"])
+            is_dim = not col.get("measure", False)
+
+            base_props = {
+                "classDefinition": "sap.cdw.querybuilder.Element",
+                "length": col.get("length", 0),
+                "precision": col.get("precision", 0),
+                "scale": col.get("scale", 0),
+                "isMeasureBeforeAI": False,
+                "isMeasureAI": False,
+                "isKeyBeforeAI": False,
+                "isKeyAI": False,
+                "isDimension": is_dim,
+                "isNotNull": col.get("key", False),
+            }
+
+            output_elements[out_el_id] = {"name": col["name"]}
+            projection_elements[proj_el_id] = {"name": col["name"]}
+            entity_elements[ent_el_id] = {"name": src_col}
+
+            ui_element_contents[out_el_id] = {
+                **base_props,
+                "name": col["name"],
+                "label": col.get("label", col["name"]),
+                "newName": col["name"],
+                "indexOrder": i,
+                "isCalculated": True,
+            }
+            ui_element_contents[proj_el_id] = {
+                **base_props,
+                "name": col["name"],
+                "label": col.get("label", col["name"]),
+                "newName": col["name"],
+                "indexOrder": i,
+                "isCalculated": False,
+                "successorElement": out_el_id,
+            }
+            ui_element_contents[ent_el_id] = {
+                **base_props,
+                "name": src_col,
+                "label": col.get("label", src_col),
+                "newName": src_col,
+                "indexOrder": i,
+                "isCalculated": False,
+                "successorElement": proj_el_id,
+            }
+
+        contents: Dict[str, Any] = {}
+
+        contents[model_id] = {
+            "classDefinition": "sap.cdw.querybuilder.Model",
+            "name": view_id,
+            "label": description or view_id,
+            "#objectStatus": "0",
+            "output": output_id,
+            "nodes": {
+                output_id: {"name": view_id},
+                projection_id: {"name": "Projection 1"},
+                entity_id: {"name": source_object},
+            },
+            "diagrams": {
+                diagram_id: {}
+            }
+        }
+
+        contents[output_id] = {
+            "classDefinition": "sap.cdw.querybuilder.Output",
+            "name": view_id,
+            "type": "graphicView",
+            "isDeltaOutboundOn": False,
+            "isPinToMemoryEnabled": False,
+            "dataCategory": ui_data_category,
+            "#objectStatus": "0",
+            "elements": output_elements,
+        }
+
+        contents[projection_id] = {
+            "classDefinition": "sap.cdw.querybuilder.RenameElements",
+            "_isProjectionNode": True,
+            "name": "Projection 1",
+            "elements": projection_elements,
+            "successorNode": output_id,
+        }
+
+        contents[entity_id] = {
+            "classDefinition": "sap.cdw.querybuilder.Entity",
+            "name": source_object,
+            "label": source_object,
+            "type": 3,
+            "isDeltaOutboundOn": False,
+            "isPinToMemoryEnabled": False,
+            "dataCategory": "DIMENSION",
+            "isAllowConsumption": False,
+            "#objectStatus": "0",
+            "elements": entity_elements,
+            "successorNode": projection_id,
+        }
+
+        contents[diagram_id] = {
+            "classDefinition": "sap.cdw.querybuilder.ui.Diagram",
+            "symbols": {
+                _new_id(): {},
+                _new_id(): {"name": "Entity Symbol 1"},
+                _new_id(): {},
+            }
+        }
+
+        contents.update(ui_element_contents)
+
+        ui_model = json.dumps({"contents": contents})
+
+        csn_definition = {
+            "definitions": {
+                view_id: view_definition
+            },
+            "editorSettings": {
+                view_id: {
+                    "editor": {
+                        "lastModifier": "GRAPHICALVIEWBUILDER",
+                        "default": "GRAPHICALVIEWBUILDER"
+                    },
+                    "uiModel": ui_model
+                }
+            }
+        }
+
+        # Write CSN to temp file and invoke CLI create
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+                json.dump(csn_definition, temp_file, indent=2)
+                temp_file_path = temp_file.name
+
+            try:
+                cmd = [
+                    "datasphere", "objects", "views", "create",
+                    "--space", space_id,
+                    "--file-path", temp_file_path,
+                    "--save-anyway",
+                ]
+                if not deploy:
+                    cmd.append("--no-deploy")
+                logger.info(f"Running CLI: {' '.join(cmd)}")
+
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+
+                if process.returncode != 0:
+                    err = stderr.decode().strip() if stderr else ""
+                    out = stdout.decode().strip() if stdout else ""
+                    error_msg = err or out or "Unknown error"
+                    logger.error(f"CLI error creating view: {error_msg}")
+                    return [types.TextContent(
+                        type="text",
+                        text=f"Error creating view '{view_id}' in space '{space_id}': {error_msg}\n\n"
+                             f"CSN sent:\n{json.dumps(csn_definition, indent=2)}"
+                    )]
+
+                cli_output = stdout.decode().strip()
+                result = {
+                    "status": "SUCCESS",
+                    "message": f"View '{view_id}' created in space '{space_id}'",
+                    "cli_output": cli_output,
+                    "view": {
+                        "view_id": view_id,
+                        "space_id": space_id,
+                        "source_object": source_object,
+                        "node_type": node_type,
+                        "semantic_usage": semantic_usage,
+                        "exposed_for_consumption": expose_for_consumption,
+                        "deployed": deploy,
+                        "column_count": len(columns),
+                    },
+                    "next_steps": [
+                        "Use read_graphical_view to verify the view",
+                        ("View is deployed and queryable" if deploy else "Deploy the view to make it queryable"),
+                    ],
+                }
+
+                return [types.TextContent(
+                    type="text",
+                    text=f"View Created:\n\n{json.dumps(result, indent=2)}"
+                )]
+
+            finally:
+                try:
+                    _os.unlink(temp_file_path)
+                except Exception:
+                    pass
+
+        except asyncio.TimeoutError:
+            logger.error("CLI create command timed out")
+            return [types.TextContent(
+                type="text",
+                text="Error: Datasphere CLI create command timed out after 120 seconds."
+            )]
+        except FileNotFoundError:
+            logger.error("Datasphere CLI not found")
+            return [types.TextContent(
+                type="text",
+                text="Error: 'datasphere' CLI not found. Make sure it is installed and available in PATH."
+            )]
+        except Exception as e:
+            logger.error(f"Error creating view via CLI: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error creating view: {str(e)}"
+            )]
+
+    elif name == "update_graphical_view":
+        space_id = arguments["space_id"]
+        view_id = arguments["view_id"]
+        node_type = arguments["node_type"]
+        filter_condition = arguments.get("filter_condition", "")
+        default_names = {"FILTER": "Filter 1", "CALCULATED_COLUMN": "Calculated Columns 1", "JOIN": "Join 1", "UNION": "Union 1"}
+        node_name = arguments.get("node_name", default_names.get(node_type, "Node 1"))
+        deploy = arguments.get("deploy", False)
+        column_name = arguments.get("column_name", "")
+        expression = arguments.get("expression", "")
+        data_type = arguments.get("data_type", "STRING")
+        column_label = arguments.get("column_label", "")
+        column_length = arguments.get("column_length")
+        join_object = arguments.get("join_object", "")
+        join_type = (arguments.get("join_type") or "inner").lower()
+        join_conditions = arguments.get("join_conditions") or []
+        union_object = arguments.get("union_object", "")
+        union_all = bool(arguments.get("union_all", False))
+        after_node = arguments.get("after_node") or None
+
+        if node_type not in ("FILTER", "CALCULATED_COLUMN", "JOIN", "UNION"):
+            return [types.TextContent(
+                type="text",
+                text=f"node_type '{node_type}' not yet supported. Available: FILTER, CALCULATED_COLUMN, JOIN, UNION."
+            )]
+
+        if node_type == "FILTER" and not filter_condition:
+            return [types.TextContent(
+                type="text",
+                text="filter_condition is required when node_type is FILTER."
+            )]
+
+        if node_type == "CALCULATED_COLUMN" and (not column_name or not expression):
+            return [types.TextContent(
+                type="text",
+                text="column_name and expression are required when node_type is CALCULATED_COLUMN."
+            )]
+
+        if node_type == "JOIN":
+            if not join_object:
+                return [types.TextContent(
+                    type="text",
+                    text="join_object is required when node_type is JOIN."
+                )]
+            if not join_conditions or not isinstance(join_conditions, list):
+                return [types.TextContent(
+                    type="text",
+                    text="join_conditions (list of {left, right}) is required when node_type is JOIN."
+                )]
+            for jc in join_conditions:
+                if not isinstance(jc, dict) or "left" not in jc or "right" not in jc:
+                    return [types.TextContent(
+                        type="text",
+                        text="Each join_condition must be an object with 'left' and 'right' keys."
+                    )]
+            if join_type not in ("inner", "left outer", "right outer", "full outer"):
+                return [types.TextContent(
+                    type="text",
+                    text="join_type must be one of: inner, left outer, right outer, full outer."
+                )]
+            if node_name == default_names.get(node_type):
+                node_name = "Join 1"
+
+        if node_type == "UNION":
+            if not union_object:
+                return [types.TextContent(
+                    type="text",
+                    text="union_object is required when node_type is UNION."
+                )]
+            if node_name == default_names.get(node_type):
+                node_name = "Union 1"
+
+        import asyncio
+        import uuid
+        import tempfile
+        import os as _os
+
+        def _new_id():
+            return str(uuid.uuid4())
+
+        _SYMBOL_WIDTH = {
+            "EntitySymbol": 168,
+            "CalculatedSymbol": 48,
+            "FilterSymbol": 48,
+            "JoinSymbol": 48,
+            "UnionSymbol": 48,
+            "RenameElementsSymbol": 48,
+            "OutputSymbol": 50,
+        }
+        _SYMBOL_Y_ANCHOR = {
+            "EntitySymbol": 20,
+            "CalculatedSymbol": 16,
+            "FilterSymbol": 16,
+            "JoinSymbol": 16,
+            "UnionSymbol": 16,
+            "RenameElementsSymbol": 16,
+            "OutputSymbol": 20,
+        }
+
+        def _sym_short(sym):
+            return (sym.get("classDefinition") or "").split(".")[-1]
+
+        def _anchor_right(sym):
+            short = _sym_short(sym)
+            w = _SYMBOL_WIDTH.get(short, 48)
+            yo = _SYMBOL_Y_ANCHOR.get(short, 16)
+            return (sym.get("x", 0) + w, sym.get("y", 0) + yo)
+
+        def _anchor_left(sym):
+            short = _sym_short(sym)
+            yo = _SYMBOL_Y_ANCHOR.get(short, 16)
+            return (sym.get("x", 0), sym.get("y", 0) + yo)
+
+        def _compute_assoc_points(contents_map, src_id, tgt_id):
+            src = contents_map.get(src_id)
+            tgt = contents_map.get(tgt_id)
+            if not src or not tgt:
+                return ""
+            sx, sy = _anchor_right(src)
+            tx, ty = _anchor_left(tgt)
+            sx, sy, tx, ty = int(round(sx)), int(round(sy)), int(round(tx)), int(round(ty))
+            if sy == ty:
+                return f"{sx},{sy} {tx},{ty}"
+            mx = int((sx + tx) // 2)
+            return f"{sx},{sy} {mx},{sy} {mx},{ty} {tx},{ty}"
+
+        def _refresh_shifted_assoc_points(contents_map, shifted_sym_ids):
+            for _aid, _asym in contents_map.items():
+                if _asym.get("classDefinition") != "sap.cdw.querybuilder.ui.AssociationSymbol":
+                    continue
+                _src = _asym.get("sourceSymbol")
+                _tgt = _asym.get("targetSymbol")
+                if _src in shifted_sym_ids or _tgt in shifted_sym_ids:
+                    _asym["points"] = _compute_assoc_points(contents_map, _src, _tgt)
+
+        try:
+            # Step 1: Read existing view definition
+            read_cmd = [
+                "datasphere", "objects", "views", "read",
+                "--space", space_id, "--technical-name", view_id,
+            ]
+            logger.info(f"Running CLI: {' '.join(read_cmd)}")
+            read_proc = await asyncio.create_subprocess_exec(
+                *read_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            read_stdout, read_stderr = await asyncio.wait_for(read_proc.communicate(), timeout=60)
+            if read_proc.returncode != 0:
+                err = read_stderr.decode().strip() or read_stdout.decode().strip() or "Unknown error"
+                return [types.TextContent(
+                    type="text",
+                    text=f"Could not read view '{view_id}' in space '{space_id}': {err}"
+                )]
+
+            view_data = json.loads(read_stdout.decode())
+            view_def = view_data["definitions"][view_id]
+            editor_settings = view_data.get("editorSettings", {})
+
+            normalized_condition = filter_condition
+
+            if node_type == "FILTER":
+                # Step 2a: CSN — add WHERE clause; also build normalized condition
+                # string with columns double-quoted for the uiModel Filter node.
+                import re as _re
+                raw_tokens = _re.findall(r"'[^']*'|\S+", filter_condition)
+                csn_where = []
+                normalized_parts = []
+                source_ref = None
+                query_from = view_def.get("query", {}).get("SELECT", {}).get("from", {})
+                if isinstance(query_from, dict) and "ref" in query_from:
+                    source_ref = query_from["ref"][0]
+
+                def _quote_col(name: str) -> str:
+                    if name.startswith('"') and name.endswith('"'):
+                        return name
+                    return '"' + name.replace('"', '""') + '"'
+
+                i = 0
+                while i < len(raw_tokens):
+                    token = raw_tokens[i]
+                    token_upper = token.upper()
+
+                    if token_upper in ("AND", "OR"):
+                        csn_where.append(token.lower())
+                        normalized_parts.append(token_upper)
+                        i += 1
+                    elif i + 2 < len(raw_tokens):
+                        col_name = token
+                        operator = raw_tokens[i + 1]
+                        value = raw_tokens[i + 2]
+
+                        raw_col = col_name[1:-1] if (col_name.startswith('"') and col_name.endswith('"')) else col_name
+
+                        value_literal = value
+                        if value.startswith("'") and value.endswith("'"):
+                            value_bare = value[1:-1]
+                        else:
+                            value_bare = value
+
+                        if source_ref:
+                            csn_where.append({"ref": [source_ref, raw_col]})
+                        else:
+                            csn_where.append({"ref": [raw_col]})
+                        csn_where.append(operator)
+                        try:
+                            csn_where.append({"val": int(value_bare)})
+                        except ValueError:
+                            try:
+                                csn_where.append({"val": float(value_bare)})
+                            except ValueError:
+                                csn_where.append({"val": value_bare})
+
+                        normalized_parts.append(f"{_quote_col(raw_col)} {operator} {value_literal}")
+                        i += 3
+                    else:
+                        i += 1
+
+                if csn_where:
+                    view_def["query"]["SELECT"]["where"] = csn_where
+
+                normalized_condition = " ".join(normalized_parts) if normalized_parts else filter_condition
+
+                # Step 2b: uiModel — insert Filter node before Output
+                ui_model_str = editor_settings.get(view_id, {}).get("uiModel")
+                if ui_model_str:
+                    ui_model = json.loads(ui_model_str)
+                    contents = ui_model["contents"]
+
+                    model_entry = None
+                    output_node_id = None
+                    output_content = None
+                    diagram_content = None
+
+                    for cid, content in contents.items():
+                        cls = content.get("classDefinition", "")
+                        if cls == "sap.cdw.querybuilder.Model":
+                            model_entry = content
+                            output_node_id = content.get("output")
+                        elif cls == "sap.cdw.querybuilder.Output":
+                            output_content = content
+                        elif cls == "sap.cdw.querybuilder.ui.Diagram":
+                            diagram_content = content
+
+                    if output_node_id and output_content:
+                        predecessor_id = None
+                        if after_node:
+                            for cid, content in contents.items():
+                                cls = content.get("classDefinition", "")
+                                if cls.startswith("sap.cdw.querybuilder.") and cls not in (
+                                    "sap.cdw.querybuilder.Model",
+                                    "sap.cdw.querybuilder.Output",
+                                    "sap.cdw.querybuilder.Element",
+                                ) and not cls.startswith("sap.cdw.querybuilder.ui.") and content.get("name") == after_node:
+                                    predecessor_id = cid
+                                    break
+                            if not predecessor_id:
+                                return [types.TextContent(
+                                    type="text",
+                                    text=f"after_node '{after_node}' not found in view '{view_id}'."
+                                )]
+                        else:
+                            for cid, content in contents.items():
+                                if content.get("successorNode") == output_node_id:
+                                    predecessor_id = cid
+                                    break
+
+                        predecessor_content = contents.get(predecessor_id, {}) if predecessor_id else {}
+                        pred_els = predecessor_content.get("elements", {})
+                        old_successor_id = predecessor_content.get("successorNode")
+
+                        filter_node_id = _new_id()
+                        filter_elements = {}
+                        filter_element_contents = {}
+
+                        for pred_el_id, pred_el_ref in pred_els.items():
+                            col_name = pred_el_ref["name"]
+                            pred_el_detail = contents.get(pred_el_id, {})
+                            old_successor = pred_el_detail.get("successorElement")
+
+                            filter_el_id = _new_id()
+                            filter_elements[filter_el_id] = {"name": col_name}
+
+                            filter_element_contents[filter_el_id] = {
+                                "classDefinition": "sap.cdw.querybuilder.Element",
+                                "name": col_name,
+                                "label": pred_el_detail.get("label", col_name),
+                                "newName": col_name,
+                                "indexOrder": pred_el_detail.get("indexOrder", 0),
+                                "expression": pred_el_detail.get("expression", col_name),
+                                "isCalculated": True,
+                                "length": pred_el_detail.get("length", 0),
+                                "precision": pred_el_detail.get("precision", 0),
+                                "scale": pred_el_detail.get("scale", 0),
+                                "isMeasureBeforeAI": False,
+                                "isMeasureAI": False,
+                                "isKeyBeforeAI": False,
+                                "isKeyAI": False,
+                                "isDimension": True,
+                                "isNotNull": pred_el_detail.get("isNotNull", False),
+                                "successorElement": old_successor,
+                            }
+
+                            pred_el_detail["successorElement"] = filter_el_id
+
+                        contents[filter_node_id] = {
+                            "classDefinition": "sap.cdw.querybuilder.Filter",
+                            "condition": normalized_condition,
+                            "name": node_name,
+                            "elements": filter_elements,
+                            "successorNode": old_successor_id,
+                        }
+
+                        if predecessor_id:
+                            contents[predecessor_id]["successorNode"] = filter_node_id
+
+                        if model_entry:
+                            model_entry["nodes"][filter_node_id] = {"name": node_name}
+
+                        contents.update(filter_element_contents)
+
+                        if diagram_content:
+                            orphan_ids = [cid for cid, c in contents.items()
+                                          if c.get("classDefinition") == "sap.galilei.ui.diagram.Symbol"]
+                            for oid in orphan_ids:
+                                contents.pop(oid)
+                                diagram_content.get("symbols", {}).pop(oid, None)
+
+                            succ_sym_id = None
+                            succ_sym = None
+                            pre_out_sym_id = None
+                            pre_out_sym = None
+                            for sid, sym in contents.items():
+                                if sym.get("object") == old_successor_id:
+                                    succ_sym_id = sid
+                                    succ_sym = sym
+                                elif sym.get("object") == predecessor_id:
+                                    pre_out_sym_id = sid
+                                    pre_out_sym = sym
+
+                            if succ_sym and pre_out_sym:
+                                new_x = succ_sym.get("x", 0)
+                                new_y = pre_out_sym.get("y", 0)
+                                shift_delta = 98
+                                shifted_sym_ids = set()
+                                for sid2, sym2 in contents.items():
+                                    cls2 = sym2.get("classDefinition", "")
+                                    if cls2.startswith("sap.cdw.querybuilder.ui.") \
+                                            and cls2 != "sap.cdw.querybuilder.ui.AssociationSymbol" \
+                                            and cls2 != "sap.cdw.querybuilder.ui.Diagram" \
+                                            and "x" in sym2 and sym2.get("x", 0) >= new_x \
+                                            and sid2 != pre_out_sym_id:
+                                        sym2["x"] = sym2["x"] + shift_delta
+                                        shifted_sym_ids.add(sid2)
+
+                                filter_sym_id = _new_id()
+                                contents[filter_sym_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.FilterSymbol",
+                                    "font": 'bold 11px "72","72full",Arial,Helvetica,sans-serif',
+                                    "x": new_x,
+                                    "y": new_y,
+                                    "object": filter_node_id,
+                                }
+                                diagram_content["symbols"][filter_sym_id] = {}
+
+                                assoc1_id = _new_id()
+                                contents[assoc1_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.AssociationSymbol",
+                                    "points": _compute_assoc_points(contents, pre_out_sym_id, filter_sym_id),
+                                    "contentOffsetX": 5,
+                                    "contentOffsetY": 5,
+                                    "sourceSymbol": pre_out_sym_id,
+                                    "targetSymbol": filter_sym_id,
+                                }
+                                diagram_content["symbols"][assoc1_id] = {}
+
+                                assoc2_id = _new_id()
+                                contents[assoc2_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.AssociationSymbol",
+                                    "points": _compute_assoc_points(contents, filter_sym_id, succ_sym_id),
+                                    "contentOffsetX": 5,
+                                    "contentOffsetY": 5,
+                                    "sourceSymbol": filter_sym_id,
+                                    "targetSymbol": succ_sym_id,
+                                }
+                                diagram_content["symbols"][assoc2_id] = {}
+
+                                old_assoc_ids = [sid for sid, sym in contents.items()
+                                                 if sym.get("classDefinition") == "sap.cdw.querybuilder.ui.AssociationSymbol"
+                                                 and sym.get("sourceSymbol") == pre_out_sym_id
+                                                 and sym.get("targetSymbol") == succ_sym_id
+                                                 and sid not in (assoc1_id, assoc2_id)]
+                                for old_id in old_assoc_ids:
+                                    contents.pop(old_id)
+                                    diagram_content["symbols"].pop(old_id, None)
+
+                                _refresh_shifted_assoc_points(contents, shifted_sym_ids)
+
+                    editor_settings[view_id]["uiModel"] = json.dumps(ui_model)
+
+            elif node_type == "CALCULATED_COLUMN":
+                # Step 2a: CSN — add element + column entry
+                type_map = {
+                    "STRING": ("cds.String", "NVARCHAR", column_length or 256),
+                    "INTEGER": ("cds.Integer", "INTEGER", None),
+                    "DECIMAL": ("cds.Decimal", "DECIMAL", None),
+                    "DATE": ("cds.Date", "DATE", None),
+                    "BOOLEAN": ("cds.Boolean", "BOOLEAN", None),
+                }
+                cds_type, native_type, col_len = type_map.get(
+                    data_type.upper(), ("cds.String", "NVARCHAR", column_length or 256)
+                )
+                label = column_label or column_name
+
+                # Auto-quote column identifiers in expression
+                known_cols = set((view_def.get("elements") or {}).keys())
+
+                def _quote_expression(expr: str) -> str:
+                    out = []
+                    i = 0
+                    n = len(expr)
+                    while i < n:
+                        ch = expr[i]
+                        if ch == "'":
+                            j = i + 1
+                            while j < n:
+                                if expr[j] == "'":
+                                    if j + 1 < n and expr[j + 1] == "'":
+                                        j += 2
+                                        continue
+                                    j += 1
+                                    break
+                                j += 1
+                            out.append(expr[i:j])
+                            i = j
+                            continue
+                        if ch == '"':
+                            j = i + 1
+                            while j < n:
+                                if expr[j] == '"':
+                                    if j + 1 < n and expr[j + 1] == '"':
+                                        j += 2
+                                        continue
+                                    j += 1
+                                    break
+                                j += 1
+                            out.append(expr[i:j])
+                            i = j
+                            continue
+                        if ch.isalpha() or ch == "_":
+                            j = i
+                            while j < n and (expr[j].isalnum() or expr[j] == "_"):
+                                j += 1
+                            word = expr[i:j]
+                            if word in known_cols:
+                                out.append('"' + word.replace('"', '""') + '"')
+                            else:
+                                out.append(word)
+                            i = j
+                            continue
+                        out.append(ch)
+                        i += 1
+                    return "".join(out)
+
+                expression = _quote_expression(expression)
+
+                def _expression_to_csn_column(expr: str, col_name: str):
+                    e = expr.strip()
+                    if e.startswith("'") and e.endswith("'") and len(e) >= 2:
+                        inner = e[1:-1].replace("''", "'")
+                        return {"val": inner, "as": col_name}
+                    try:
+                        return {"val": int(e), "as": col_name}
+                    except ValueError:
+                        pass
+                    try:
+                        return {"val": float(e), "as": col_name}
+                    except ValueError:
+                        pass
+                    if e.startswith('"') and e.endswith('"') and len(e) >= 2:
+                        return {"ref": [e[1:-1].replace('""', '"')], "as": col_name}
+                    if e and e.replace("_", "").isalnum():
+                        return {"ref": [e], "as": col_name}
+                    return {"as": col_name}
+
+                query = view_def.get("query", {})
+
+                if "SELECT" in query:
+                    # Flat SELECT — add column at outer level (expression encoded in uiModel)
+                    if column_name not in view_def.get("elements", {}):
+                        view_def["elements"][column_name] = {
+                            "@EndUserText.label": label,
+                            "type": cds_type,
+                            "@DataWarehouse.native.dataType": native_type,
+                            "@Analytics.dimension": True,
+                            **({"length": col_len} if col_len else {}),
+                        }
+                    columns_list = query["SELECT"].get("columns", [])
+                    columns_list.append({"as": column_name})
+                    query["SELECT"]["columns"] = columns_list
+
+                elif "SET" in query:
+                    # Top-level SET (UNION) — inject into specific branch SELECT
+                    if not after_node:
+                        return [types.TextContent(
+                            type="text",
+                            text="View has a top-level SET (union) query. CALCULATED_COLUMN on this shape requires after_node to identify the target branch (an entity name that appears as FROM.ref in one of the SET branches)."
+                        )]
+                    args = query["SET"].get("args", [])
+                    branch_idx = None
+                    for i, arg in enumerate(args):
+                        inner_select = arg.get("SELECT", {}) if isinstance(arg, dict) else {}
+                        inner_from = inner_select.get("from", {}) if isinstance(inner_select, dict) else {}
+                        if isinstance(inner_from, dict) and "ref" in inner_from and inner_from["ref"] and inner_from["ref"][0] == after_node:
+                            branch_idx = i
+                            break
+                    if branch_idx is None:
+                        return [types.TextContent(
+                            type="text",
+                            text=f"after_node '{after_node}' does not match any SET branch FROM.ref. For SET-shaped queries, after_node must be an Entity at a branch source."
+                        )]
+                    csn_entry = _expression_to_csn_column(expression, column_name)
+                    target_cols = args[branch_idx]["SELECT"].setdefault("columns", [])
+                    target_cols.append(csn_entry)
+                    if column_name not in view_def.get("elements", {}):
+                        view_def["elements"][column_name] = {
+                            "@EndUserText.label": label,
+                            "type": cds_type,
+                            "@DataWarehouse.native.dataType": native_type,
+                            "@Analytics.dimension": True,
+                            **({"length": col_len} if col_len else {}),
+                        }
+                else:
+                    return [types.TextContent(
+                        type="text",
+                        text="View query has neither SELECT nor SET at top level. Unsupported shape."
+                    )]
+
+                # Step 2b: uiModel — insert CalculatedElements node before Output
+                ui_model_str = editor_settings.get(view_id, {}).get("uiModel")
+                if ui_model_str:
+                    ui_model = json.loads(ui_model_str)
+                    contents = ui_model["contents"]
+
+                    model_entry = None
+                    output_id = None
+                    output_content = None
+                    proj_id = None
+                    proj_content = None
+                    diagram_content = None
+
+                    for cid, content in contents.items():
+                        cls = content.get("classDefinition", "")
+                        if cls == "sap.cdw.querybuilder.Model":
+                            model_entry = content
+                        elif cls == "sap.cdw.querybuilder.Output":
+                            output_id = cid
+                            output_content = content
+                        elif cls == "sap.cdw.querybuilder.RenameElements":
+                            proj_id = cid
+                            proj_content = content
+                        elif cls == "sap.cdw.querybuilder.ui.Diagram":
+                            diagram_content = content
+
+                    predecessor_id = None
+                    if after_node:
+                        for cid, content in contents.items():
+                            cls = content.get("classDefinition", "")
+                            if cls.startswith("sap.cdw.querybuilder.") and cls not in (
+                                "sap.cdw.querybuilder.Model",
+                                "sap.cdw.querybuilder.Output",
+                                "sap.cdw.querybuilder.Element",
+                            ) and not cls.startswith("sap.cdw.querybuilder.ui.") and content.get("name") == after_node:
+                                predecessor_id = cid
+                                break
+                        if not predecessor_id:
+                            return [types.TextContent(
+                                type="text",
+                                text=f"after_node '{after_node}' not found in view '{view_id}'."
+                            )]
+                    else:
+                        for cid, content in contents.items():
+                            if content.get("successorNode") == output_id:
+                                predecessor_id = cid
+                                break
+
+                    predecessor_content = contents.get(predecessor_id, {}) if predecessor_id else {}
+                    old_successor_id = predecessor_content.get("successorNode")
+
+                    if output_content and predecessor_id:
+                        next_index = len(output_content.get("elements", {}))
+
+                        # Add Output element for new column (reuse if already present)
+                        existing_out_el_id = None
+                        for eid, eref in output_content.get("elements", {}).items():
+                            if isinstance(eref, dict) and eref.get("name") == column_name:
+                                existing_out_el_id = eid
+                                break
+                        if existing_out_el_id:
+                            out_el_id = existing_out_el_id
+                            out_el_newly_created = False
+                        else:
+                            out_el_id = _new_id()
+                            output_content["elements"][out_el_id] = {"name": column_name}
+                            contents[out_el_id] = {
+                                "classDefinition": "sap.cdw.querybuilder.Element",
+                                "name": column_name,
+                                "label": label,
+                                "newName": column_name,
+                                "indexOrder": next_index,
+                                "isCalculated": True,
+                                "length": col_len or 0,
+                                "precision": 0,
+                                "scale": 0,
+                                "isMeasureBeforeAI": False,
+                                "isMeasureAI": False,
+                                "isKeyBeforeAI": False,
+                                "isKeyAI": False,
+                                "isDimension": True,
+                                "isNotNull": False,
+                                "nativeDataType": native_type,
+                            }
+                            out_el_newly_created = True
+
+                        # Walk downstream chain (nodes strictly between Calc insertion point and Output)
+                        downstream_chain = []
+                        walk_id = old_successor_id
+                        while walk_id and walk_id != output_id:
+                            downstream_chain.append(walk_id)
+                            walk_id = contents.get(walk_id, {}).get("successorNode")
+
+                        # For each downstream node, reuse existing element with same name, else create
+                        downstream_new_el_ids = {}
+                        downstream_newly_created = set()
+                        for node_id in downstream_chain:
+                            node_content = contents[node_id]
+                            existing_el_id = None
+                            for eid, eref in node_content.get("elements", {}).items():
+                                if isinstance(eref, dict) and eref.get("name") == column_name:
+                                    existing_el_id = eid
+                                    break
+                            if existing_el_id:
+                                downstream_new_el_ids[node_id] = existing_el_id
+                            else:
+                                new_el_id = _new_id()
+                                node_content.setdefault("elements", {})[new_el_id] = {"name": column_name}
+                                downstream_new_el_ids[node_id] = new_el_id
+                                downstream_newly_created.add(new_el_id)
+
+                        # Wire downstream new elements: only overwrite contents for newly created ones
+                        for i, node_id in enumerate(downstream_chain):
+                            new_el_id = downstream_new_el_ids[node_id]
+                            if new_el_id not in downstream_newly_created:
+                                continue
+                            if i + 1 < len(downstream_chain):
+                                succ_el = downstream_new_el_ids[downstream_chain[i + 1]]
+                            else:
+                                succ_el = out_el_id
+                            node_content = contents[node_id]
+                            existing_idx = [contents.get(eid, {}).get("indexOrder", 0)
+                                            for eid in node_content.get("elements", {}).keys()
+                                            if eid != new_el_id]
+                            max_idx = (max(existing_idx) + 1) if existing_idx else 0
+                            contents[new_el_id] = {
+                                "classDefinition": "sap.cdw.querybuilder.Element",
+                                "name": column_name,
+                                "label": label,
+                                "newName": column_name,
+                                "indexOrder": max_idx,
+                                "expression": '"' + column_name.replace('"', '""') + '"',
+                                "isCalculated": True,
+                                "length": col_len or 0,
+                                "precision": 0,
+                                "scale": 0,
+                                "isMeasureBeforeAI": False,
+                                "isMeasureAI": False,
+                                "isKeyBeforeAI": False,
+                                "isKeyAI": False,
+                                "isDimension": True,
+                                "isNotNull": False,
+                                "successorElement": succ_el,
+                            }
+
+                        # Create CalculatedElements node with pass-through + new column
+                        calc_node_id = _new_id()
+                        calc_elements = {}
+                        calc_element_contents = {}
+
+                        pre_els = predecessor_content.get("elements", {})
+                        for pre_el_id, pre_el_ref in list(pre_els.items()):
+                            col = pre_el_ref["name"]
+                            pre_el_detail = contents.get(pre_el_id, {})
+                            old_successor = pre_el_detail.get("successorElement")
+
+                            calc_el_id = _new_id()
+                            calc_elements[calc_el_id] = {"name": col}
+                            calc_element_contents[calc_el_id] = {
+                                "classDefinition": "sap.cdw.querybuilder.Element",
+                                "name": col,
+                                "label": pre_el_detail.get("label", col),
+                                "newName": col,
+                                "indexOrder": pre_el_detail.get("indexOrder", 0),
+                                "expression": '"' + col.replace('"', '""') + '"',
+                                "isCalculated": True,
+                                "length": pre_el_detail.get("length", 0),
+                                "precision": pre_el_detail.get("precision", 0),
+                                "scale": pre_el_detail.get("scale", 0),
+                                "isMeasureBeforeAI": False,
+                                "isMeasureAI": False,
+                                "isKeyBeforeAI": False,
+                                "isKeyAI": False,
+                                "isDimension": True,
+                                "isNotNull": pre_el_detail.get("isNotNull", False),
+                                "successorElement": old_successor,
+                            }
+                            pre_el_detail["successorElement"] = calc_el_id
+
+                        # Calc's new column element points to first downstream new_el OR out_el_id
+                        calc_new_succ = (downstream_new_el_ids[downstream_chain[0]]
+                                         if downstream_chain else out_el_id)
+                        calc_new_el_id = _new_id()
+                        calc_elements[calc_new_el_id] = {"name": column_name}
+                        calc_element_contents[calc_new_el_id] = {
+                            "classDefinition": "sap.cdw.querybuilder.Element",
+                            "name": column_name,
+                            "label": label,
+                            "newName": column_name,
+                            "indexOrder": next_index,
+                            "expression": expression,
+                            "isCalculated": True,
+                            "length": col_len or 0,
+                            "precision": 0,
+                            "scale": 0,
+                            "isMeasureBeforeAI": False,
+                            "isMeasureAI": False,
+                            "isKeyBeforeAI": False,
+                            "isKeyAI": False,
+                            "isDimension": True,
+                            "isNotNull": False,
+                            "successorElement": calc_new_succ,
+                        }
+
+                        contents[calc_node_id] = {
+                            "classDefinition": "sap.cdw.querybuilder.CalculatedElements",
+                            "name": node_name,
+                            "elements": calc_elements,
+                            "successorNode": old_successor_id,
+                        }
+
+                        contents[predecessor_id]["successorNode"] = calc_node_id
+                        contents.update(calc_element_contents)
+
+                        if model_entry:
+                            model_entry["nodes"][calc_node_id] = {"name": node_name}
+
+                        # Preserve original tail-insert behavior: if predecessor is RenameElements
+                        # (projection) and no downstream, add projection element for new column.
+                        # This mirrors the prior working tail-insert semantics.
+                        if (not downstream_chain) and proj_content is predecessor_content:
+                            proj_el_id = _new_id()
+                            proj_content["elements"][proj_el_id] = {"name": column_name}
+                            contents[proj_el_id] = {
+                                "classDefinition": "sap.cdw.querybuilder.Element",
+                                "name": column_name,
+                                "label": label,
+                                "newName": column_name,
+                                "indexOrder": next_index,
+                                "expression": expression,
+                                "isCalculated": True,
+                                "length": col_len or 0,
+                                "precision": 0,
+                                "scale": 0,
+                                "isMeasureBeforeAI": False,
+                                "isMeasureAI": False,
+                                "isKeyBeforeAI": False,
+                                "isKeyAI": False,
+                                "isDimension": True,
+                                "isNotNull": False,
+                                "successorElement": calc_new_el_id,
+                            }
+
+                        if diagram_content:
+                            orphan_ids = [cid for cid, c in contents.items()
+                                          if c.get("classDefinition") == "sap.galilei.ui.diagram.Symbol"]
+                            for oid in orphan_ids:
+                                contents.pop(oid)
+                                diagram_content.get("symbols", {}).pop(oid, None)
+
+                            succ_sym_id = None
+                            succ_sym = None
+                            pre_sym_id = None
+                            pre_sym = None
+                            succ_obj_id = old_successor_id or output_id
+                            for sid, sym in contents.items():
+                                if sym.get("object") == succ_obj_id:
+                                    succ_sym_id = sid
+                                    succ_sym = sym
+                                elif sym.get("object") == predecessor_id:
+                                    pre_sym_id = sid
+                                    pre_sym = sym
+
+                            if succ_sym and pre_sym:
+                                new_x = succ_sym.get("x", 0)
+                                new_y = pre_sym.get("y", 0)
+                                shift_delta = 98
+                                shifted_sym_ids = set()
+                                for sid2, sym2 in contents.items():
+                                    cls2 = sym2.get("classDefinition", "")
+                                    if cls2.startswith("sap.cdw.querybuilder.ui.") \
+                                            and cls2 != "sap.cdw.querybuilder.ui.AssociationSymbol" \
+                                            and cls2 != "sap.cdw.querybuilder.ui.Diagram" \
+                                            and "x" in sym2 and sym2.get("x", 0) >= new_x \
+                                            and sid2 != pre_sym_id:
+                                        sym2["x"] = sym2["x"] + shift_delta
+                                        shifted_sym_ids.add(sid2)
+
+                                calc_sym_id = _new_id()
+                                contents[calc_sym_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.CalculatedSymbol",
+                                    "font": 'bold 11px "72","72full",Arial,Helvetica,sans-serif',
+                                    "x": new_x,
+                                    "y": new_y,
+                                    "object": calc_node_id,
+                                }
+                                diagram_content["symbols"][calc_sym_id] = {}
+
+                                assoc1_id = _new_id()
+                                contents[assoc1_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.AssociationSymbol",
+                                    "points": _compute_assoc_points(contents, pre_sym_id, calc_sym_id),
+                                    "contentOffsetX": 5,
+                                    "contentOffsetY": 5,
+                                    "sourceSymbol": pre_sym_id,
+                                    "targetSymbol": calc_sym_id,
+                                }
+                                diagram_content["symbols"][assoc1_id] = {}
+
+                                assoc2_id = _new_id()
+                                contents[assoc2_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.AssociationSymbol",
+                                    "points": _compute_assoc_points(contents, calc_sym_id, succ_sym_id),
+                                    "contentOffsetX": 5,
+                                    "contentOffsetY": 5,
+                                    "sourceSymbol": calc_sym_id,
+                                    "targetSymbol": succ_sym_id,
+                                }
+                                diagram_content["symbols"][assoc2_id] = {}
+
+                                old_assoc_ids = [sid for sid, sym in contents.items()
+                                                 if sym.get("classDefinition") == "sap.cdw.querybuilder.ui.AssociationSymbol"
+                                                 and sym.get("sourceSymbol") == pre_sym_id
+                                                 and sym.get("targetSymbol") == succ_sym_id
+                                                 and sid not in (assoc1_id, assoc2_id)]
+                                for old_id in old_assoc_ids:
+                                    contents.pop(old_id)
+                                    diagram_content["symbols"].pop(old_id, None)
+
+                                _refresh_shifted_assoc_points(contents, shifted_sym_ids)
+
+                    editor_settings[view_id]["uiModel"] = json.dumps(ui_model)
+
+            elif node_type == "JOIN":
+                # Step 2a: CSN — change FROM to join structure
+                import copy as _copy_join
+                source_ref = None
+                is_wrapped_join = False
+                query_root = view_def.get("query", {})
+                has_select_root = isinstance(query_root, dict) and "SELECT" in query_root
+                has_set_root = isinstance(query_root, dict) and "SET" in query_root
+
+                query_from = {}
+                if has_select_root:
+                    query_from = query_root["SELECT"].get("from", {}) or {}
+                if isinstance(query_from, dict) and "ref" in query_from:
+                    source_ref = query_from["ref"][0]
+
+                if not source_ref:
+                    # Non-simple source (UNION-rooted, nested JOIN, set ops) — wrap entire query as subquery
+                    is_wrapped_join = True
+                    source_ref = None
+                    if isinstance(query_from, dict):
+                        source_ref = query_from.get("as")
+                    if not source_ref:
+                        source_ref = node_name
+
+                left_alias = f"{source_ref}(1)"
+                right_alias = f"{join_object}(2)"
+
+                csn_on = []
+                for idx, cond in enumerate(join_conditions):
+                    if idx > 0:
+                        csn_on.append("and")
+                    csn_on.append({"ref": [left_alias, cond["left"]]})
+                    csn_on.append("=")
+                    csn_on.append({"ref": [right_alias, cond["right"]]})
+
+                if is_wrapped_join:
+                    view_elements_map = view_def.get("elements", {})
+                    if has_select_root:
+                        inner_subquery = {"SELECT": _copy_join.deepcopy(query_root["SELECT"]), "as": left_alias}
+                    elif has_set_root:
+                        inner_subquery = {"SET": _copy_join.deepcopy(query_root["SET"]), "as": left_alias}
+                    else:
+                        inner_subquery = {"SELECT": _copy_join.deepcopy(query_root), "as": left_alias}
+                    view_def["query"] = {
+                        "SELECT": {
+                            "from": {
+                                "join": join_type,
+                                "args": [
+                                    inner_subquery,
+                                    {"ref": [join_object], "as": right_alias},
+                                ],
+                                "on": csn_on,
+                            },
+                            "columns": [{"ref": [left_alias, cn]} for cn in view_elements_map],
+                        }
+                    }
+                else:
+                    view_def["query"]["SELECT"]["from"] = {
+                        "join": join_type,
+                        "args": [
+                            {"ref": [source_ref], "as": left_alias},
+                            {"ref": [join_object], "as": right_alias},
+                        ],
+                        "on": csn_on,
+                    }
+
+                    for col in view_def["query"]["SELECT"].get("columns", []):
+                        if isinstance(col, dict):
+                            if "ref" in col and len(col["ref"]) == 2 and col["ref"][0] == source_ref:
+                                col["ref"][0] = left_alias
+                            if "xpr" in col:
+                                for item in col["xpr"]:
+                                    if isinstance(item, dict) and "ref" in item:
+                                        if len(item["ref"]) == 2 and item["ref"][0] == source_ref:
+                                            item["ref"][0] = left_alias
+
+                    where_clause = view_def["query"]["SELECT"].get("where", [])
+                    for item in where_clause:
+                        if isinstance(item, dict) and "ref" in item:
+                            if len(item["ref"]) == 2 and item["ref"][0] == source_ref:
+                                item["ref"][0] = left_alias
+
+                # Step 2b: uiModel updates
+                ui_model_str = editor_settings.get(view_id, {}).get("uiModel")
+                if ui_model_str:
+                    ui_model = json.loads(ui_model_str)
+                    contents = ui_model["contents"]
+
+                    model_entry = None
+                    entity_id = None
+                    entity_content = None
+                    diagram_content = None
+                    first_successor_id = None
+
+                    for cid, content in contents.items():
+                        cls = content.get("classDefinition", "")
+                        if cls == "sap.cdw.querybuilder.Model":
+                            model_entry = content
+                        elif cls == "sap.cdw.querybuilder.Entity":
+                            entity_id = cid
+                            entity_content = content
+                            first_successor_id = content.get("successorNode")
+                        elif cls == "sap.cdw.querybuilder.ui.Diagram":
+                            diagram_content = content
+
+                    # Determine predecessor (Entity by default, pre_output for wrapped, or after_node target)
+                    predecessor_id = entity_id
+                    predecessor_content = entity_content
+                    is_midchain_join = False
+                    if after_node:
+                        match_id = None
+                        for cid, content in contents.items():
+                            cls = content.get("classDefinition", "")
+                            if cls.startswith("sap.cdw.querybuilder.") and cls not in (
+                                "sap.cdw.querybuilder.Model",
+                                "sap.cdw.querybuilder.Output",
+                                "sap.cdw.querybuilder.Element",
+                            ) and not cls.startswith("sap.cdw.querybuilder.ui.") and content.get("name") == after_node:
+                                match_id = cid
+                                break
+                        if not match_id:
+                            return [types.TextContent(
+                                type="text",
+                                text=f"after_node '{after_node}' not found in view '{view_id}'."
+                            )]
+                        predecessor_id = match_id
+                        predecessor_content = contents.get(match_id, {})
+                        is_midchain_join = predecessor_id != entity_id
+                    elif is_wrapped_join:
+                        # Find Output, then the node whose successorNode points to Output
+                        output_id_local = None
+                        for cid, content in contents.items():
+                            if content.get("classDefinition") == "sap.cdw.querybuilder.Output":
+                                output_id_local = cid
+                                break
+                        if output_id_local:
+                            for cid, content in contents.items():
+                                if content.get("successorNode") == output_id_local:
+                                    predecessor_id = cid
+                                    predecessor_content = content
+                                    break
+                        is_midchain_join = True
+
+                    first_successor_id = predecessor_content.get("successorNode") if predecessor_content else None
+
+                    if predecessor_content and first_successor_id:
+                        # Only set alias on Entity for tail JOIN (entity is leftInput)
+                        if not is_midchain_join and entity_content is not None:
+                            entity_content["alias"] = left_alias
+
+                        # Read right-side source
+                        right_read_cmd = [
+                            "datasphere", "objects", "views", "read",
+                            "--space", space_id, "--technical-name", join_object,
+                        ]
+                        logger.info(f"Running CLI: {' '.join(right_read_cmd)}")
+                        right_proc = await asyncio.create_subprocess_exec(
+                            *right_read_cmd,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                        )
+                        right_out, right_err = await asyncio.wait_for(right_proc.communicate(), timeout=60)
+                        right_source_elements = {}
+                        right_ui_elements = {}
+                        if right_proc.returncode == 0:
+                            right_data = json.loads(right_out.decode())
+                            right_def = right_data.get("definitions", {}).get(join_object, {})
+                            right_source_elements = right_def.get("elements", {})
+                            right_ui_str = right_data.get("editorSettings", {}).get(join_object, {}).get("uiModel")
+                            if right_ui_str:
+                                right_ui = json.loads(right_ui_str)
+                                for rcid, rc in right_ui.get("contents", {}).items():
+                                    if rc.get("classDefinition") == "sap.cdw.querybuilder.Entity":
+                                        for rel_id, rel_ref in rc.get("elements", {}).items():
+                                            rel_detail = right_ui["contents"].get(rel_id, {})
+                                            right_ui_elements[rel_ref["name"]] = rel_detail
+                        else:
+                            err = right_err.decode().strip() or right_out.decode().strip() or "Unknown error"
+                            return [types.TextContent(
+                                type="text",
+                                text=f"Could not read join source '{join_object}' in space '{space_id}': {err}"
+                            )]
+
+                        right_entity_id = _new_id()
+                        right_entity_els = {}
+                        right_entity_el_details = {}
+                        idx = 0
+                        for col_name, col_def in right_source_elements.items():
+                            el_id = _new_id()
+                            right_entity_els[el_id] = {"name": col_name}
+                            right_entity_el_details[el_id] = {
+                                "classDefinition": "sap.cdw.querybuilder.Element",
+                                "name": col_name,
+                                "label": col_def.get("@EndUserText.label", col_name),
+                                "newName": col_name,
+                                "indexOrder": idx,
+                                "length": col_def.get("length", 0),
+                                "precision": col_def.get("precision", 0),
+                                "scale": col_def.get("scale", 0),
+                                "isMeasureBeforeAI": False,
+                                "isMeasureAI": False,
+                                "isKeyBeforeAI": False,
+                                "isKeyAI": False,
+                                "isDimension": True,
+                                "isNotNull": col_def.get("notNull", False),
+                            }
+                            if col_def.get("type") == "cds.Date":
+                                right_entity_el_details[el_id]["dataType"] = "cds.Date"
+                            idx += 1
+
+                        join_node_id = _new_id()
+                        join_elements = {}
+                        join_element_contents = {}
+
+                        left_els = predecessor_content.get("elements", {})
+                        left_el_by_name = {}
+                        for el_id, el_ref in left_els.items():
+                            left_el_by_name[el_ref["name"]] = el_id
+                            join_el_id = _new_id()
+                            join_elements[join_el_id] = {"name": el_ref["name"]}
+                            el_detail = contents.get(el_id, {})
+                            join_element_contents[join_el_id] = {
+                                "classDefinition": "sap.cdw.querybuilder.Element",
+                                "name": el_ref["name"],
+                                "label": el_detail.get("label", el_ref["name"]),
+                                "newName": el_ref["name"],
+                                "indexOrder": el_detail.get("indexOrder", 0),
+                                "length": el_detail.get("length", 0),
+                                "precision": el_detail.get("precision", 0),
+                                "scale": el_detail.get("scale", 0),
+                                "isMeasureBeforeAI": False,
+                                "isMeasureAI": False,
+                                "isKeyBeforeAI": False,
+                                "isKeyAI": False,
+                                "isDimension": True,
+                                "isNotNull": el_detail.get("isNotNull", False),
+                            }
+                            if el_detail.get("dataType"):
+                                join_element_contents[join_el_id]["dataType"] = el_detail["dataType"]
+
+                        right_el_by_name = {}
+                        for el_id, el_ref in right_entity_els.items():
+                            right_el_by_name[el_ref["name"]] = el_id
+                            join_el_id = _new_id()
+                            join_elements[join_el_id] = {"name": el_ref["name"]}
+                            el_detail = right_entity_el_details.get(el_id, {})
+                            join_element_contents[join_el_id] = {
+                                "classDefinition": "sap.cdw.querybuilder.Element",
+                                "name": el_ref["name"],
+                                "label": el_detail.get("label", el_ref["name"]),
+                                "newName": el_ref["name"],
+                                "indexOrder": el_detail.get("indexOrder", 0),
+                                "length": el_detail.get("length", 0),
+                                "precision": el_detail.get("precision", 0),
+                                "scale": el_detail.get("scale", 0),
+                                "isMeasureBeforeAI": False,
+                                "isMeasureAI": False,
+                                "isKeyBeforeAI": False,
+                                "isKeyAI": False,
+                                "isDimension": True,
+                                "isNotNull": el_detail.get("isNotNull", False),
+                            }
+                            if el_detail.get("dataType"):
+                                join_element_contents[join_el_id]["dataType"] = el_detail["dataType"]
+
+                        join_mappings = {}
+                        for cond in join_conditions:
+                            mapping_id = _new_id()
+                            left_el_id = left_el_by_name.get(cond["left"])
+                            right_el_id = right_el_by_name.get(cond["right"])
+                            if left_el_id and right_el_id:
+                                join_mappings[mapping_id] = {}
+                                contents[mapping_id] = {
+                                    "classDefinition": "sap.cdw.commonmodel.ElementMapping",
+                                    "source": left_el_id,
+                                    "target": right_el_id,
+                                }
+
+                        first_succ_content = contents.get(first_successor_id, {})
+                        first_succ_els = first_succ_content.get("elements", {})
+                        first_succ_el_by_name = {}
+                        for el_id, el_ref in first_succ_els.items():
+                            first_succ_el_by_name[el_ref["name"]] = el_id
+
+                        for join_el_id, join_el_ref in join_elements.items():
+                            target_el_id = first_succ_el_by_name.get(join_el_ref["name"])
+                            if target_el_id:
+                                join_element_contents[join_el_id]["successorElement"] = target_el_id
+
+                        join_el_by_name = {}
+                        for jel_id, jel_ref in join_elements.items():
+                            if jel_ref["name"] not in join_el_by_name:
+                                join_el_by_name[jel_ref["name"]] = jel_id
+
+                        for el_id, el_ref in left_els.items():
+                            el_detail = contents.get(el_id, {})
+                            join_target = join_el_by_name.get(el_ref["name"])
+                            if join_target:
+                                el_detail["successorElement"] = join_target
+
+                        right_join_el_by_name = {}
+                        seen_names = set()
+                        for jel_id, jel_ref in join_elements.items():
+                            nm = jel_ref["name"]
+                            if nm in seen_names:
+                                right_join_el_by_name[nm] = jel_id
+                            seen_names.add(nm)
+
+                        for el_id, el_ref in right_entity_els.items():
+                            el_detail = right_entity_el_details.get(el_id, {})
+                            join_target = right_join_el_by_name.get(el_ref["name"], join_el_by_name.get(el_ref["name"]))
+                            if join_target:
+                                el_detail["successorElement"] = join_target
+
+                        ec = entity_content or {}
+                        contents[right_entity_id] = {
+                            "classDefinition": "sap.cdw.querybuilder.Entity",
+                            "name": join_object,
+                            "label": join_object,
+                            "type": 3,
+                            "isDeltaOutboundOn": ec.get("isDeltaOutboundOn", False),
+                            "isPinToMemoryEnabled": False,
+                            "dataCategory": ec.get("dataCategory", "DIMENSION"),
+                            "isUseOLAPDBHint": ec.get("isUseOLAPDBHint", False),
+                            "isHiddenInUi": False,
+                            "alias": right_alias,
+                            "elements": right_entity_els,
+                            "successorNode": join_node_id,
+                        }
+                        contents.update(right_entity_el_details)
+
+                        contents[join_node_id] = {
+                            "classDefinition": "sap.cdw.querybuilder.Join",
+                            "name": node_name,
+                            "mappings": join_mappings,
+                            "leftInput": predecessor_id,
+                            "rightInput": right_entity_id,
+                            "elements": join_elements,
+                            "successorNode": first_successor_id,
+                        }
+                        contents.update(join_element_contents)
+
+                        contents[predecessor_id]["successorNode"] = join_node_id
+
+                        if model_entry:
+                            model_entry["nodes"][join_node_id] = {"name": node_name}
+                            model_entry["nodes"][right_entity_id] = {"name": join_object}
+
+                        if diagram_content:
+                            orphan_ids = [cid for cid, c in contents.items()
+                                          if c.get("classDefinition") == "sap.galilei.ui.diagram.Symbol"]
+                            for oid in orphan_ids:
+                                contents.pop(oid)
+                                diagram_content.get("symbols", {}).pop(oid, None)
+
+                            pred_sym_id = None
+                            pred_sym = None
+                            first_succ_sym_id = None
+                            first_succ_sym = None
+                            for sid, sym in contents.items():
+                                if sym.get("object") == predecessor_id:
+                                    pred_sym_id = sid
+                                    pred_sym = sym
+                                elif sym.get("object") == first_successor_id:
+                                    first_succ_sym_id = sid
+                                    first_succ_sym = sym
+
+                            if pred_sym:
+                                ent_x = pred_sym.get("x", 0)
+                                ent_y = pred_sym.get("y", 0)
+                                ent_w = pred_sym.get("width", 168)
+
+                                if not is_midchain_join:
+                                    # Entity is leftInput — shift it down to make room for right entity above
+                                    pred_sym["y"] = ent_y + 45
+                                    right_ent_y = ent_y - 45
+                                else:
+                                    # Mid-chain: place right entity below predecessor (don't move predecessor)
+                                    right_ent_y = ent_y + 120
+
+                                right_ent_sym_id = _new_id()
+                                right_ent_w = _SYMBOL_WIDTH.get("EntitySymbol", 168)
+                                contents[right_ent_sym_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.EntitySymbol",
+                                    "name": "Entity Symbol 1",
+                                    "displayName": "Entity Symbol 1",
+                                    "_height": 40,
+                                    "x": ent_x,
+                                    "y": right_ent_y,
+                                    "width": right_ent_w,
+                                    "object": right_entity_id,
+                                }
+                                diagram_content["symbols"][right_ent_sym_id] = {"name": "Entity Symbol 1"}
+
+                                join_x = ent_x + ent_w + 50
+                                join_y = ent_y
+                                if first_succ_sym:
+                                    join_x = first_succ_sym.get("x", join_x) - 98
+                                    join_y = first_succ_sym.get("y", join_y)
+
+                                # Mid-chain: shift downstream symbols to make room for join + right entity
+                                shifted_sym_ids = set()
+                                if is_midchain_join and first_succ_sym:
+                                    threshold_x = first_succ_sym.get("x", 0)
+                                    shift_delta = 250
+                                    for sid2, sym2 in contents.items():
+                                        cls2 = sym2.get("classDefinition", "")
+                                        if cls2.startswith("sap.cdw.querybuilder.ui.") \
+                                                and cls2 != "sap.cdw.querybuilder.ui.AssociationSymbol" \
+                                                and cls2 != "sap.cdw.querybuilder.ui.Diagram" \
+                                                and "x" in sym2 and sym2.get("x", 0) >= threshold_x \
+                                                and sid2 not in (pred_sym_id, right_ent_sym_id):
+                                            sym2["x"] = sym2["x"] + shift_delta
+                                            shifted_sym_ids.add(sid2)
+
+                                join_sym_id = _new_id()
+                                contents[join_sym_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.JoinSymbol",
+                                    "font": 'bold 11px "72","72full",Arial,Helvetica,sans-serif',
+                                    "x": join_x,
+                                    "y": join_y,
+                                    "object": join_node_id,
+                                }
+                                diagram_content["symbols"][join_sym_id] = {}
+
+                                assoc_left_id = _new_id()
+                                contents[assoc_left_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.AssociationSymbol",
+                                    "points": _compute_assoc_points(contents, pred_sym_id, join_sym_id),
+                                    "contentOffsetX": 5,
+                                    "contentOffsetY": 5,
+                                    "sourceSymbol": pred_sym_id,
+                                    "targetSymbol": join_sym_id,
+                                    "object": join_node_id,
+                                }
+                                diagram_content["symbols"][assoc_left_id] = {}
+
+                                assoc_right_id = _new_id()
+                                contents[assoc_right_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.AssociationSymbol",
+                                    "isLeftInput": False,
+                                    "points": _compute_assoc_points(contents, right_ent_sym_id, join_sym_id),
+                                    "contentOffsetX": 5,
+                                    "contentOffsetY": 5,
+                                    "sourceSymbol": right_ent_sym_id,
+                                    "targetSymbol": join_sym_id,
+                                    "object": join_node_id,
+                                }
+                                diagram_content["symbols"][assoc_right_id] = {}
+
+                                assoc_join_succ_id = _new_id()
+                                contents[assoc_join_succ_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.AssociationSymbol",
+                                    "points": _compute_assoc_points(contents, join_sym_id, first_succ_sym_id),
+                                    "contentOffsetX": 5,
+                                    "contentOffsetY": 5,
+                                    "sourceSymbol": join_sym_id,
+                                    "targetSymbol": first_succ_sym_id,
+                                }
+                                diagram_content["symbols"][assoc_join_succ_id] = {}
+
+                                old_assoc_ids = [sid for sid, sym in contents.items()
+                                                 if sym.get("classDefinition") == "sap.cdw.querybuilder.ui.AssociationSymbol"
+                                                 and sym.get("sourceSymbol") == pred_sym_id
+                                                 and sym.get("targetSymbol") == first_succ_sym_id
+                                                 and sid not in (assoc_left_id, assoc_join_succ_id)]
+                                for old_id in old_assoc_ids:
+                                    contents.pop(old_id)
+                                    diagram_content["symbols"].pop(old_id, None)
+
+                                _refresh_shifted_assoc_points(contents, shifted_sym_ids)
+
+                    editor_settings[view_id]["uiModel"] = json.dumps(ui_model)
+
+            elif node_type == "UNION":
+                # Step 2a: CSN — wrap the current inner SELECT into left SET arg
+                import copy as _copy
+
+                right_read_cmd = [
+                    "datasphere", "objects", "views", "read",
+                    "--space", space_id, "--technical-name", union_object,
+                ]
+                logger.info(f"Running CLI: {' '.join(right_read_cmd)}")
+                right_proc = await asyncio.create_subprocess_exec(
+                    *right_read_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                right_out, right_err = await asyncio.wait_for(right_proc.communicate(), timeout=60)
+                right_source_elements = {}
+                if right_proc.returncode == 0:
+                    right_data = json.loads(right_out.decode())
+                    right_def = right_data.get("definitions", {}).get(union_object, {})
+                    right_source_elements = right_def.get("elements", {})
+                else:
+                    err = right_err.decode().strip() or right_out.decode().strip() or "Unknown error"
+                    return [types.TextContent(
+                        type="text",
+                        text=f"Could not read union source '{union_object}' in space '{space_id}': {err}"
+                    )]
+
+                view_elements = view_def.get("elements", {})
+                right_alias = f"{union_object}(2)"
+
+                old_inner_select = _copy.deepcopy(view_def["query"]["SELECT"])
+
+                right_columns = []
+                for col_name in view_elements:
+                    right_columns.append({"ref": [right_alias, col_name]})
+
+                union_set = {
+                    "SET": {
+                        "op": "union",
+                        "all": union_all,
+                        "args": [
+                            {"SELECT": old_inner_select},
+                            {"SELECT": {"from": {"ref": [union_object], "as": right_alias}, "columns": right_columns}},
+                        ]
+                    },
+                    "as": node_name,
+                }
+
+                view_def["query"]["SELECT"] = {
+                    "from": union_set,
+                    "columns": [{"ref": [node_name, cn]} for cn in view_elements],
+                }
+
+                # Step 2b: uiModel — insert Union between pre_output and Output
+                ui_model_str = editor_settings.get(view_id, {}).get("uiModel")
+                if ui_model_str:
+                    ui_model = json.loads(ui_model_str)
+                    contents = ui_model["contents"]
+
+                    model_entry = None
+                    output_id = None
+                    output_content = None
+                    diagram_content = None
+
+                    for cid, content in contents.items():
+                        cls = content.get("classDefinition", "")
+                        if cls == "sap.cdw.querybuilder.Model":
+                            model_entry = content
+                        elif cls == "sap.cdw.querybuilder.Output":
+                            output_id = cid
+                            output_content = content
+                        elif cls == "sap.cdw.querybuilder.ui.Diagram":
+                            diagram_content = content
+
+                    pre_output_id = None
+                    pre_output_content = None
+                    if after_node:
+                        for cid, content in contents.items():
+                            cls = content.get("classDefinition", "")
+                            if cls.startswith("sap.cdw.querybuilder.") and cls not in (
+                                "sap.cdw.querybuilder.Model",
+                                "sap.cdw.querybuilder.Output",
+                                "sap.cdw.querybuilder.Element",
+                            ) and not cls.startswith("sap.cdw.querybuilder.ui.") and content.get("name") == after_node:
+                                pre_output_id = cid
+                                pre_output_content = content
+                                break
+                        if not pre_output_id:
+                            return [types.TextContent(
+                                type="text",
+                                text=f"after_node '{after_node}' not found in view '{view_id}'."
+                            )]
+                    else:
+                        for cid, content in contents.items():
+                            if content.get("successorNode") == output_id:
+                                pre_output_id = cid
+                                pre_output_content = content
+                                break
+
+                    old_successor_id = pre_output_content.get("successorNode") if pre_output_content else None
+
+                    if output_content and pre_output_content:
+                        # Right entity
+                        right_entity_id = _new_id()
+                        right_entity_els = {}
+                        right_entity_el_details = {}
+                        idx = 0
+                        for col_name, col_def in right_source_elements.items():
+                            el_id = _new_id()
+                            right_entity_els[el_id] = {"name": col_name}
+                            right_entity_el_details[el_id] = {
+                                "classDefinition": "sap.cdw.querybuilder.Element",
+                                "name": col_name,
+                                "label": col_def.get("@EndUserText.label", col_name),
+                                "newName": col_name,
+                                "indexOrder": idx,
+                                "length": col_def.get("length", 0),
+                                "precision": col_def.get("precision", 0),
+                                "scale": col_def.get("scale", 0),
+                                "isMeasureBeforeAI": False,
+                                "isMeasureAI": False,
+                                "isKeyBeforeAI": False,
+                                "isKeyAI": False,
+                                "isDimension": True,
+                                "isNotNull": col_def.get("notNull", False),
+                            }
+                            if col_def.get("type") == "cds.Date":
+                                right_entity_el_details[el_id]["dataType"] = "cds.Date"
+                            idx += 1
+
+                        # Union node — elements mirror pre_output's element names
+                        union_node_id = _new_id()
+                        union_elements = {}
+                        union_element_contents = {}
+
+                        pre_output_els = pre_output_content.get("elements", {})
+                        for pre_el_id, pre_el_ref in pre_output_els.items():
+                            col = pre_el_ref["name"]
+                            pre_el_detail = contents.get(pre_el_id, {})
+                            union_el_id = _new_id()
+                            union_elements[union_el_id] = {"name": col}
+                            union_element_contents[union_el_id] = {
+                                "classDefinition": "sap.cdw.querybuilder.Element",
+                                "name": col,
+                                "label": pre_el_detail.get("label", col),
+                                "newName": col,
+                                "indexOrder": pre_el_detail.get("indexOrder", 0),
+                                "length": pre_el_detail.get("length", 0),
+                                "precision": pre_el_detail.get("precision", 0),
+                                "scale": pre_el_detail.get("scale", 0),
+                                "isMeasureBeforeAI": False,
+                                "isMeasureAI": False,
+                                "isKeyBeforeAI": False,
+                                "isKeyAI": False,
+                                "isDimension": True,
+                                "isNotNull": pre_el_detail.get("isNotNull", False),
+                            }
+                            if pre_el_detail.get("dataType"):
+                                union_element_contents[union_el_id]["dataType"] = pre_el_detail["dataType"]
+
+                        # Wire: union elements → successor elements (by name)
+                        old_successor_content = contents.get(old_successor_id, {}) if old_successor_id else {}
+                        succ_els = old_successor_content.get("elements", {})
+                        succ_el_by_name = {}
+                        for s_el_id, s_el_ref in succ_els.items():
+                            succ_el_by_name[s_el_ref["name"]] = s_el_id
+
+                        for u_el_id, u_el_ref in union_elements.items():
+                            tgt = succ_el_by_name.get(u_el_ref["name"])
+                            if tgt:
+                                union_element_contents[u_el_id]["successorElement"] = tgt
+
+                        # Wire: pre_output elements → union elements (by name)
+                        union_el_by_name = {}
+                        for u_el_id, u_el_ref in union_elements.items():
+                            union_el_by_name[u_el_ref["name"]] = u_el_id
+
+                        for pre_el_id, pre_el_ref in pre_output_els.items():
+                            pre_el_detail = contents.get(pre_el_id, {})
+                            tgt = union_el_by_name.get(pre_el_ref["name"])
+                            if tgt:
+                                pre_el_detail["successorElement"] = tgt
+
+                        # Wire: right_entity elements → union elements (by name)
+                        for rel_id, rel_ref in right_entity_els.items():
+                            rel_detail = right_entity_el_details.get(rel_id, {})
+                            tgt = union_el_by_name.get(rel_ref["name"])
+                            if tgt:
+                                rel_detail["successorElement"] = tgt
+
+                        # Insert right entity
+                        contents[right_entity_id] = {
+                            "classDefinition": "sap.cdw.querybuilder.Entity",
+                            "name": union_object,
+                            "label": union_object,
+                            "type": 3,
+                            "isDeltaOutboundOn": False,
+                            "isPinToMemoryEnabled": False,
+                            "dataCategory": "DIMENSION",
+                            "isHiddenInUi": False,
+                            "elements": right_entity_els,
+                            "successorNode": union_node_id,
+                        }
+                        contents.update(right_entity_el_details)
+
+                        # Insert Union node
+                        contents[union_node_id] = {
+                            "classDefinition": "sap.cdw.querybuilder.Union",
+                            "isUnionAll": union_all,
+                            "name": node_name,
+                            "elements": union_elements,
+                            "successorNode": old_successor_id,
+                        }
+                        contents.update(union_element_contents)
+
+                        # Rewire: pre_output → union
+                        pre_output_content["successorNode"] = union_node_id
+
+                        if model_entry:
+                            model_entry["nodes"][union_node_id] = {"name": node_name}
+                            model_entry["nodes"][right_entity_id] = {"name": union_object}
+
+                        # Diagram symbols
+                        if diagram_content:
+                            orphan_ids = [cid for cid, c in contents.items()
+                                          if c.get("classDefinition") == "sap.galilei.ui.diagram.Symbol"]
+                            for oid in orphan_ids:
+                                contents.pop(oid)
+                                diagram_content.get("symbols", {}).pop(oid, None)
+
+                            pre_out_sym_id = None
+                            pre_out_sym = None
+                            succ_sym_id = None
+                            succ_sym = None
+                            for sid, sym in contents.items():
+                                if sym.get("object") == pre_output_id:
+                                    pre_out_sym_id = sid
+                                    pre_out_sym = sym
+                                elif sym.get("object") == old_successor_id:
+                                    succ_sym_id = sid
+                                    succ_sym = sym
+
+                            if pre_out_sym and succ_sym:
+                                po_x = pre_out_sym.get("x", 0)
+                                po_y = pre_out_sym.get("y", 0)
+                                po_w = pre_out_sym.get("width", 168)
+
+                                # Place Union between pre_output and Output
+                                union_x = po_x + po_w + 80
+                                union_y = po_y
+                                # Right entity directly below Union
+                                right_ent_sym_id = _new_id()
+                                contents[right_ent_sym_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.EntitySymbol",
+                                    "_height": 40,
+                                    "x": union_x,
+                                    "y": po_y + 120,
+                                    "width": po_w,
+                                    "object": right_entity_id,
+                                }
+                                diagram_content["symbols"][right_ent_sym_id] = {}
+
+                                # Shift successor (and anything to its right) to make room
+                                shift_amount = 250
+                                shift_ids = set([succ_sym_id])
+                                for sid2, sym2 in contents.items():
+                                    if sym2.get("classDefinition", "").startswith("sap.cdw.querybuilder.ui.") \
+                                            and sym2.get("classDefinition") != "sap.cdw.querybuilder.ui.AssociationSymbol" \
+                                            and sid2 not in (pre_out_sym_id, right_ent_sym_id) \
+                                            and sym2.get("x", 0) >= union_x:
+                                        shift_ids.add(sid2)
+                                shifted_sym_ids = set()
+                                for sid2 in shift_ids:
+                                    sym2 = contents.get(sid2, {})
+                                    if "x" in sym2:
+                                        sym2["x"] = sym2["x"] + shift_amount
+                                        shifted_sym_ids.add(sid2)
+
+                                union_sym_id = _new_id()
+                                contents[union_sym_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.UnionSymbol",
+                                    "font": 'bold 11px "72","72full",Arial,Helvetica,sans-serif',
+                                    "x": union_x,
+                                    "y": union_y,
+                                    "object": union_node_id,
+                                }
+                                diagram_content["symbols"][union_sym_id] = {}
+
+                                # pre_output → union
+                                assoc1_id = _new_id()
+                                contents[assoc1_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.AssociationSymbol",
+                                    "points": _compute_assoc_points(contents, pre_out_sym_id, union_sym_id),
+                                    "contentOffsetX": 5,
+                                    "contentOffsetY": 5,
+                                    "sourceSymbol": pre_out_sym_id,
+                                    "targetSymbol": union_sym_id,
+                                }
+                                diagram_content["symbols"][assoc1_id] = {}
+
+                                # right_entity → union
+                                assoc2_id = _new_id()
+                                contents[assoc2_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.AssociationSymbol",
+                                    "points": _compute_assoc_points(contents, right_ent_sym_id, union_sym_id),
+                                    "contentOffsetX": 5,
+                                    "contentOffsetY": 5,
+                                    "sourceSymbol": right_ent_sym_id,
+                                    "targetSymbol": union_sym_id,
+                                }
+                                diagram_content["symbols"][assoc2_id] = {}
+
+                                # union → successor
+                                assoc3_id = _new_id()
+                                contents[assoc3_id] = {
+                                    "classDefinition": "sap.cdw.querybuilder.ui.AssociationSymbol",
+                                    "points": _compute_assoc_points(contents, union_sym_id, succ_sym_id),
+                                    "contentOffsetX": 5,
+                                    "contentOffsetY": 5,
+                                    "sourceSymbol": union_sym_id,
+                                    "targetSymbol": succ_sym_id,
+                                }
+                                diagram_content["symbols"][assoc3_id] = {}
+
+                                # Remove direct pre_output → successor association
+                                old_assoc_ids = [sid for sid, sym in contents.items()
+                                                 if sym.get("classDefinition") == "sap.cdw.querybuilder.ui.AssociationSymbol"
+                                                 and sym.get("sourceSymbol") == pre_out_sym_id
+                                                 and sym.get("targetSymbol") == succ_sym_id
+                                                 and sid not in (assoc1_id, assoc3_id)]
+                                for old_id in old_assoc_ids:
+                                    contents.pop(old_id)
+                                    diagram_content["symbols"].pop(old_id, None)
+
+                                _refresh_shifted_assoc_points(contents, shifted_sym_ids)
+
+                    editor_settings[view_id]["uiModel"] = json.dumps(ui_model)
+
+            # Step 3: Write updated definition via CLI update
+            updated_data = {
+                "definitions": {view_id: view_def},
+                "editorSettings": editor_settings,
+            }
+            for k, v in view_data.items():
+                if k not in ("definitions", "editorSettings"):
+                    updated_data[k] = v
+
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+                json.dump(updated_data, temp_file, indent=2)
+                temp_file_path = temp_file.name
+
+            try:
+                upd_cmd = [
+                    "datasphere", "objects", "views", "update",
+                    "--space", space_id,
+                    "--technical-name", view_id,
+                    "--file-path", temp_file_path,
+                    "--save-anyway",
+                ]
+                if not deploy:
+                    upd_cmd.append("--no-deploy")
+                logger.info(f"Running CLI: {' '.join(upd_cmd)}")
+
+                upd_proc = await asyncio.create_subprocess_exec(
+                    *upd_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                upd_stdout, upd_stderr = await asyncio.wait_for(upd_proc.communicate(), timeout=120)
+
+                if upd_proc.returncode != 0:
+                    err = upd_stderr.decode().strip() if upd_stderr else ""
+                    out = upd_stdout.decode().strip() if upd_stdout else ""
+                    error_msg = err or out or "Unknown error"
+                    logger.error(f"CLI error updating view: {error_msg}")
+                    return [types.TextContent(
+                        type="text",
+                        text=f"Error updating view '{view_id}' in space '{space_id}': {error_msg}"
+                    )]
+
+                result = {
+                    "status": "SUCCESS",
+                    "message": f"View '{view_id}' updated with {node_type} node",
+                    "cli_output": upd_stdout.decode().strip(),
+                    "node_added": {
+                        "type": node_type,
+                        "name": node_name,
+                        "filter_condition": normalized_condition,
+                    },
+                    "deployed": deploy,
+                }
+
+                return [types.TextContent(
+                    type="text",
+                    text=f"View Updated:\n\n{json.dumps(result, indent=2)}"
+                )]
+
+            finally:
+                try:
+                    _os.unlink(temp_file_path)
+                except Exception:
+                    pass
+
+        except asyncio.TimeoutError:
+            logger.error("CLI command timed out")
+            return [types.TextContent(
+                type="text",
+                text="Error: Datasphere CLI command timed out."
+            )]
+        except FileNotFoundError:
+            return [types.TextContent(
+                type="text",
+                text="Error: 'datasphere' CLI not found. Make sure it is installed and available in PATH."
+            )]
+        except Exception as e:
+            logger.error(f"Error updating view via CLI: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error updating view: {str(e)}"
+            )]
+
+    elif name == "delete_graphical_view":
+        space_id = arguments["space_id"]
+        view_id = arguments["view_id"]
+        delete_anyway = arguments.get("delete_anyway", False)
+
+        try:
+            import asyncio
+            cmd = [
+                "datasphere", "objects", "views", "delete",
+                "--space", space_id,
+                "--technical-name", view_id,
+                "--force",
+            ]
+            if delete_anyway:
+                cmd.append("--delete-anyway")
+            logger.info(f"Running CLI: {' '.join(cmd)}")
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
+
+            if process.returncode != 0:
+                err = stderr.decode().strip() if stderr else ""
+                out = stdout.decode().strip() if stdout else ""
+                error_msg = err or out or "Unknown error"
+                logger.error(f"CLI error deleting view: {error_msg}")
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error deleting view '{view_id}' in space '{space_id}': {error_msg}"
+                )]
+
+            output = stdout.decode().strip()
+            result = {
+                "status": "SUCCESS",
+                "message": f"View '{view_id}' deleted from space '{space_id}'",
+                "cli_output": output,
+            }
+
+            return [types.TextContent(
+                type="text",
+                text=f"View Deleted:\n\n{json.dumps(result, indent=2)}"
+            )]
+
+        except asyncio.TimeoutError:
+            logger.error("CLI command timed out")
+            return [types.TextContent(
+                type="text",
+                text="Error: Datasphere CLI command timed out after 60 seconds."
+            )]
+        except FileNotFoundError:
+            logger.error("Datasphere CLI not found")
+            return [types.TextContent(
+                type="text",
+                text="Error: 'datasphere' CLI not found. Make sure it is installed and available in PATH."
+            )]
+        except Exception as e:
+            logger.error(f"Error deleting view via CLI: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error deleting view: {str(e)}"
+            )]
 
     else:
         return [types.TextContent(
