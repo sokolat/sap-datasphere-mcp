@@ -10,32 +10,43 @@ if [ -n "$DATASPHERE_CLIENT_ID" ] \
    && [ -n "$DATASPHERE_BASE_URL" ] \
    && [ -n "$DATASPHERE_TOKEN_URL" ]; then
 
-  SECRETS_FILE="/tmp/.datasphere-secrets-$$.json"
-  trap "rm -f $SECRETS_FILE" EXIT
-
   echo "[entrypoint] Setting datasphere CLI host..."
   datasphere config host set "$DATASPHERE_BASE_URL"
 
-  echo "[entrypoint] Authenticating datasphere CLI (client_credentials)..."
-  cat > "$SECRETS_FILE" << EOF
-{
-  "client_id": "$DATASPHERE_CLIENT_ID",
-  "client_secret": "$DATASPHERE_CLIENT_SECRET",
-  "token_url": "$DATASPHERE_TOKEN_URL"
-}
-EOF
-  chmod 600 "$SECRETS_FILE"
+  echo "[entrypoint] Fetching access token via client_credentials..."
+  ACCESS_TOKEN=$(python3 -c "
+import urllib.request
+import urllib.parse
+import base64
+import json
+import os
 
-  if datasphere login \
-       -d client_credentials \
-       -F \
-       -H "$DATASPHERE_BASE_URL" \
-       -s "$SECRETS_FILE"; then
-    echo "[entrypoint] datasphere CLI login OK."
+client_id = os.environ['DATASPHERE_CLIENT_ID']
+client_secret = os.environ['DATASPHERE_CLIENT_SECRET']
+token_url = os.environ['DATASPHERE_TOKEN_URL']
+
+credentials = base64.b64encode(f'{client_id}:{client_secret}'.encode()).decode()
+data = urllib.parse.urlencode({'grant_type': 'client_credentials'}).encode()
+
+req = urllib.request.Request(token_url, data=data)
+req.add_header('Authorization', f'Basic {credentials}')
+req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+
+with urllib.request.urlopen(req) as resp:
+    result = json.loads(resp.read().decode())
+    print(result['access_token'])
+" 2>/dev/null)
+
+  if [ -n "$ACCESS_TOKEN" ]; then
+    echo "[entrypoint] Access token obtained, logging into CLI..."
+    if datasphere login -F -H "$DATASPHERE_BASE_URL" -a "$ACCESS_TOKEN"; then
+      echo "[entrypoint] datasphere CLI login OK."
+    else
+      echo "[entrypoint] WARNING: datasphere CLI login with token failed."
+    fi
   else
-    echo "[entrypoint] WARNING: datasphere CLI login failed — CLI-dependent tools will error at runtime."
+    echo "[entrypoint] WARNING: Failed to obtain access token — CLI-dependent tools will error at runtime."
   fi
-  rm -f "$SECRETS_FILE"
 else
   echo "[entrypoint] DATASPHERE_* env vars not all set — skipping CLI login. CLI-dependent tools will be unavailable."
 fi
