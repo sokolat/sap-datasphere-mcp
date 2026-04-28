@@ -86,13 +86,17 @@ jobs:
 
           echo "=== Test CLI with auth: list task chains ==="
           docker run --rm \
+            --entrypoint sh \
             -e DATASPHERE_BASE_URL \
             -e DATASPHERE_CLIENT_ID \
             -e DATASPHERE_CLIENT_SECRET \
             -e DATASPHERE_TOKEN_URL \
-            $IMAGE sh -c "
+            $IMAGE -c "
+              datasphere config cache init && \
+              datasphere config host set \$DATASPHERE_BASE_URL && \
               datasphere login \
                 -d client_credentials \
+                -F \
                 -H \$DATASPHERE_BASE_URL \
                 -T \$DATASPHERE_TOKEN_URL \
                 -c \$DATASPHERE_CLIENT_ID \
