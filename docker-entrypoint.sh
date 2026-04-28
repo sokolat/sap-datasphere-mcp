@@ -9,6 +9,9 @@ if [ -n "$DATASPHERE_CLIENT_ID" ] \
    && [ -n "$DATASPHERE_CLIENT_SECRET" ] \
    && [ -n "$DATASPHERE_BASE_URL" ] \
    && [ -n "$DATASPHERE_TOKEN_URL" ]; then
+  echo "[entrypoint] Initializing datasphere CLI cache..."
+  datasphere config cache init --host "$DATASPHERE_BASE_URL"
+
   echo "[entrypoint] Authenticating datasphere CLI (client_credentials)..."
   if datasphere login \
        -d client_credentials \
