@@ -86,13 +86,11 @@ jobs:
 
           echo "=== Test CLI with auth: list task chains ==="
           docker run --rm \
-            -e DATASPHERE_BASE_URL="${DATASPHERE_BASE_URL}" \
-            -e DATASPHERE_CLIENT_ID="${DATASPHERE_CLIENT_ID}" \
-            -e DATASPHERE_CLIENT_SECRET="${DATASPHERE_CLIENT_SECRET}" \
-            -e DATASPHERE_TOKEN_URL="${DATASPHERE_TOKEN_URL}" \
-            $IMAGE sh -c '
-              datasphere objects task-chains list --space DW_SYNTAX --top 5
-            '
+            -e "DATASPHERE_BASE_URL" \
+            -e "DATASPHERE_CLIENT_ID" \
+            -e "DATASPHERE_CLIENT_SECRET" \
+            -e "DATASPHERE_TOKEN_URL" \
+            $IMAGE sh -c 'datasphere objects task-chains list --space DW_SYNTAX --top 5'
 
   deploy:
     needs: [build-and-push, test]
