@@ -14,14 +14,52 @@ Fork of [MarioDeFelipe/sap-datasphere-mcp](https://github.com/MarioDeFelipe/sap-
 | `get_task_log` | Log output of a specific run |
 | `run_task_chain` | Trigger execution of a task chain |
 
-## Cloud Deployment (Streamable HTTP)
+## Cloud Deployment (GitHub Actions)
+
+Automated CI/CD: push to `main` → build → test → deploy.
+
+### 1. Server Setup (one-time)
 
 ```bash
-git clone https://github.com/sokolat/sap-datasphere-mcp
-cd sap-datasphere-mcp
-cp .env.example .env   # fill in values
-docker build -t sap-datasphere-mcp .
-docker run -d -p 8080:8080 --env-file .env sap-datasphere-mcp
+# Install Docker
+curl -fsSL https://get.docker.com | sh
+
+# Create credentials file
+sudo mkdir -p /opt/sap-mcp
+sudo tee /opt/sap-mcp/.env << 'EOF'
+DATASPHERE_BASE_URL=https://your-tenant.eu10.hcs.cloud.sap
+DATASPHERE_CLIENT_ID=your-client-id
+DATASPHERE_CLIENT_SECRET=your-client-secret
+DATASPHERE_TOKEN_URL=https://your-tenant.authentication.eu10.hana.ondemand.com/oauth/token
+MCP_API_KEY=your-api-key
+EOF
+sudo chmod 600 /opt/sap-mcp/.env
+```
+
+### 2. GitHub Secrets
+
+Go to repo → Settings → Secrets → Actions. Add:
+
+| Secret | Value |
+|--------|-------|
+| `SERVER_HOST` | Server IP or hostname |
+| `SERVER_USER` | SSH username |
+| `SERVER_SSH_KEY` | SSH private key (full content) |
+| `GHCR_TOKEN` | GitHub PAT with `read:packages` |
+| `DATASPHERE_BASE_URL` | Datasphere tenant URL |
+| `DATASPHERE_CLIENT_ID` | OAuth client ID |
+| `DATASPHERE_CLIENT_SECRET` | OAuth client secret |
+| `DATASPHERE_TOKEN_URL` | OAuth token endpoint |
+
+### 3. Deploy
+
+Push to `main` or: Actions → "Build and Deploy MCP Server" → Run workflow.
+
+### Manual Deployment (alternative)
+
+```bash
+docker pull ghcr.io/sokolat/sap-datasphere-mcp:latest
+docker run -d -p 8080:8080 --env-file /opt/sap-mcp/.env ghcr.io/sokolat/sap-datasphere-mcp:latest
 ```
 
 ### Required env vars
