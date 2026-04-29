@@ -113,5 +113,9 @@ jobs:
               --name sap-mcp-server \
               --restart unless-stopped \
               -p 8080:8080 \
-              --env-file /opt/sap-mcp/.env \
+              -e "DATASPHERE_BASE_URL=${{ secrets.DATASPHERE_BASE_URL }}" \
+              -e "DATASPHERE_CLIENT_ID=${{ secrets.DATASPHERE_CLIENT_ID }}" \
+              -e "DATASPHERE_CLIENT_SECRET=${{ secrets.DATASPHERE_CLIENT_SECRET }}" \
+              -e "DATASPHERE_TOKEN_URL=${{ secrets.DATASPHERE_TOKEN_URL }}" \
+              -e "MCP_API_KEY=${{ secrets.MCP_API_KEY }}" \
               ghcr.io/${{ github.repository }}:latest
