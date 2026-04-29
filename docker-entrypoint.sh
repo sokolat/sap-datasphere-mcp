@@ -13,8 +13,6 @@ if [ -n "$DATASPHERE_CLIENT_ID" ] \
   # Derive authorization URL from token URL (replace /oauth/token with /oauth/authorize)
   DATASPHERE_AUTH_URL=$(echo "$DATASPHERE_TOKEN_URL" | sed 's|/oauth/token|/oauth/authorize|')
 
-  echo "[entrypoint] Debug: CLIENT_ID length=${#DATASPHERE_CLIENT_ID}, SECRET length=${#DATASPHERE_CLIENT_SECRET}"
-  echo "[entrypoint] Debug: CLIENT_ID first 10 chars=${DATASPHERE_CLIENT_ID:0:10}..."
   echo "[entrypoint] Authenticating datasphere CLI (client_credentials)..."
   if datasphere login \
        --authorization-flow client_credentials \
