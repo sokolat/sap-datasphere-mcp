@@ -106,9 +106,8 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            which docker || apt-get update && apt-get install -y docker.io
-            dockerd &>/dev/null &
-            sleep 3
+            which docker || (apt-get update && apt-get install -y docker.io)
+            docker info &>/dev/null || (dockerd &>/dev/null & sleep 5)
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker pull ghcr.io/${{ github.repository }}:latest
             docker stop sap-mcp-server || true
