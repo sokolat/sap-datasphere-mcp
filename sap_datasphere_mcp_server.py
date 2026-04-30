@@ -69,11 +69,6 @@ _TASK_MONITORING_TOOLS = {
     "get_task_log",
     "get_task_history",
     "list_task_chains",
-    "read_graphical_view",
-    "list_graphical_views",
-    "delete_graphical_view",
-    "create_graphical_view",
-    "update_graphical_view",
 }
 
 # Configure logging
