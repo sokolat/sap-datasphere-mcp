@@ -14,41 +14,57 @@ Fork of [MarioDeFelipe/sap-datasphere-mcp](https://github.com/MarioDeFelipe/sap-
 | `get_task_log` | Log output of a specific run |
 | `run_task_chain` | Trigger execution of a task chain |
 
-## Cloud Deployment (GitHub Actions)
+## Cloud Deployment (GitHub Actions + Kubernetes)
 
-Automated CI/CD: push to `main` → build → test → deploy.
+Automated CI/CD: push to `main` → build → test → image published to GHCR.
 
-### 1. Server Setup (one-time)
-
-Server admin only needs to:
-```bash
-# Install Docker
-curl -fsSL https://get.docker.com | sh
-```
-
-Then provide you: `SERVER_HOST`, `SERVER_USER`, and SSH private key.
-
-### 2. GitHub Secrets
+### 1. GitHub Secrets (for build/test)
 
 Go to repo → Settings → Secrets → Actions. Add:
 
 | Secret | Value |
 |--------|-------|
-| `SERVER_HOST` | Server IP or hostname |
-| `SERVER_USER` | SSH username |
-| `SERVER_SSH_KEY` | SSH private key (full content) |
-| `GHCR_TOKEN` | GitHub PAT with `read:packages` |
 | `DATASPHERE_BASE_URL` | Datasphere tenant URL |
 | `DATASPHERE_CLIENT_ID` | OAuth client ID |
 | `DATASPHERE_CLIENT_SECRET` | OAuth client secret |
 | `DATASPHERE_TOKEN_URL` | OAuth token endpoint |
-| `MCP_API_KEY` | Bearer token for `/mcp` endpoint |
 
-All secrets are passed to the container at deploy time — no `.env` file needed on server.
+### 2. Build
 
-### 3. Deploy
+Push to `main` or: Actions → "Build MCP Server" → Run workflow.
 
-Push to `main` or: Actions → "Build and Deploy MCP Server" → Run workflow.
+Image published to: `ghcr.io/<your-org>/sap-datasphere-mcp:latest`
+
+### 3. Kubernetes Deployment (for admin)
+
+Pull image and deploy with these env vars:
+
+```yaml
+env:
+  - name: DATASPHERE_BASE_URL
+    value: "<tenant-url>"
+  - name: DATASPHERE_CLIENT_ID
+    valueFrom:
+      secretKeyRef:
+        name: datasphere-secrets
+        key: client-id
+  - name: DATASPHERE_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: datasphere-secrets
+        key: client-secret
+  - name: DATASPHERE_TOKEN_URL
+    value: "<token-url>"
+  - name: MCP_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: mcp-secrets
+        key: api-key
+```
+
+**Port:** 8080
+**Health check:** `GET /health`
+**MCP endpoint:** `POST /mcp`
 
 ### Required env vars
 

@@ -1,4 +1,4 @@
-name: Build and Deploy MCP Server
+name: Build MCP Server
 
 on:
   push:
@@ -6,11 +6,6 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      skip_deploy:
-        description: 'Skip deployment (test build only)'
-        type: boolean
-        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -53,6 +48,17 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      - name: Output image URL
+        run: |
+          echo "### 🐳 Docker Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`ghcr.io/${{ github.repository }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Pull command:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ghcr.io/${{ github.repository }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
   test:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -91,34 +97,3 @@ jobs:
             -e "DATASPHERE_CLIENT_SECRET" \
             -e "DATASPHERE_TOKEN_URL" \
             $IMAGE sh -c 'datasphere objects task-chains list --space DW_SYNTAX --host "$DATASPHERE_BASE_URL" --top 5'
-
-  deploy:
-    needs: [build-and-push, test]
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' && inputs.skip_deploy != true
-
-    steps:
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          port: ${{ secrets.SERVER_SSH_PORT }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            which docker || (apt-get update && apt-get install -y docker.io)
-            docker info &>/dev/null || (dockerd &>/dev/null & sleep 5)
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker pull ghcr.io/${{ github.repository }}:latest
-            docker stop sap-mcp-server || true
-            docker rm sap-mcp-server || true
-            docker run -d \
-              --name sap-mcp-server \
-              --restart unless-stopped \
-              -p 8080:8080 \
-              -e "DATASPHERE_BASE_URL=${{ secrets.DATASPHERE_BASE_URL }}" \
-              -e "DATASPHERE_CLIENT_ID=${{ secrets.DATASPHERE_CLIENT_ID }}" \
-              -e "DATASPHERE_CLIENT_SECRET=${{ secrets.DATASPHERE_CLIENT_SECRET }}" \
-              -e "DATASPHERE_TOKEN_URL=${{ secrets.DATASPHERE_TOKEN_URL }}" \
-              -e "MCP_API_KEY=${{ secrets.MCP_API_KEY }}" \
-              ghcr.io/${{ github.repository }}:latest
