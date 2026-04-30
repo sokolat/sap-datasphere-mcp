@@ -1625,10 +1625,6 @@ This tool combines space_id and asset_id into an OData compound key format:
         }
 
     @staticmethod
-
-    @staticmethod
-
-    @staticmethod
     def get_all_enhanced_descriptions() -> Dict[str, Dict]:
         """Get all enhanced tool descriptions"""
         return {
@@ -1657,5 +1653,4 @@ This tool combines space_id and asset_id into an OData compound key format:
             "get_task_log": ToolDescriptions.get_task_log(),
             "get_task_history": ToolDescriptions.get_task_history(),
             "list_task_chains": ToolDescriptions.list_task_chains(),
-            # View Management Tools
         }

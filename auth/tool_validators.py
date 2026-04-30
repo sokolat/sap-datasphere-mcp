@@ -306,7 +306,7 @@ class ToolValidators:
                 required=True,
                 min_length=1,
                 max_length=64,
-                pattern=r'^[A-Z][A-Z0-9_]*$'  # Uppercase, alphanumeric with underscores
+                pattern=r'^[A-Za-z][A-Za-z0-9_]*$'  # Uppercase, alphanumeric with underscores
             ),
             # user_definition is validated by MCP tool schema (type: object)
             # No custom validation needed - it's already a dict/object
@@ -337,7 +337,7 @@ class ToolValidators:
                 required=True,
                 min_length=1,
                 max_length=64,
-                pattern=r'^[A-Z][A-Z0-9_]*$'
+                pattern=r'^[A-Za-z][A-Za-z0-9_]*$'
             ),
             ValidationRule(
                 param_name="output_file",
@@ -366,7 +366,7 @@ class ToolValidators:
                 required=True,
                 min_length=1,
                 max_length=64,
-                pattern=r'^[A-Z][A-Z0-9_]*$'
+                pattern=r'^[A-Za-z][A-Za-z0-9_]*$'
             ),
             # updated_definition is validated by MCP tool schema (type: object)
             # No custom validation needed - it's already a dict/object
@@ -397,7 +397,7 @@ class ToolValidators:
                 required=True,
                 min_length=1,
                 max_length=64,
-                pattern=r'^[A-Z][A-Z0-9_]*$'
+                pattern=r'^[A-Za-z][A-Za-z0-9_]*$'
             ),
             ValidationRule(
                 param_name="force",
@@ -984,8 +984,6 @@ class ToolValidators:
             "get_object_definition",
             "get_deployed_objects",
         ]
-
-    @staticmethod
 
     @staticmethod
     def has_validator(tool_name: str) -> bool:

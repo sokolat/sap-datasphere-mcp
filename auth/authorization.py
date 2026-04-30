@@ -484,9 +484,7 @@ class AuthorizationManager:
             description="List all task chains defined in a space using Datasphere CLI",
             risk_level="low"
         ),
-
-
-        # Phase 6 & 7 tools removed (endpoints not available as REST APIs)
+        # View tools and Phase 6 & 7 tools removed
     }
 
     def __init__(self):
