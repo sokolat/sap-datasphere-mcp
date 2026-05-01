@@ -87,6 +87,9 @@ jobs:
           echo "=== Datasphere CLI version ==="
           docker run --rm --entrypoint datasphere $IMAGE --version
 
+          echo "=== List /app contents ==="
+          docker run --rm --entrypoint ls $IMAGE -la /app/
+
           echo "=== Python server imports ==="
           docker run --rm --entrypoint python $IMAGE -c "import sap_datasphere_mcp_server; print('OK')"
 

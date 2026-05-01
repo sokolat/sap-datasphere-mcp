@@ -43,6 +43,11 @@ COPY auth/ ./auth/
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
+# Verify files copied correctly
+RUN echo "=== /app contents ===" && ls -la /app/ && \
+    echo "=== Verify main file ===" && test -f /app/sap_datasphere_mcp_server.py && \
+    echo "OK: sap_datasphere_mcp_server.py exists"
+
 # Create directory for logs
 RUN mkdir -p /app/logs
 
