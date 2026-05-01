@@ -8176,9 +8176,66 @@ def _init_options():
     )
 
 
+async def _authenticate_datasphere_cli():
+    """Authenticate Datasphere CLI using environment variables.
+
+    This runs at server startup to ensure CLI-dependent tools work,
+    regardless of whether docker-entrypoint.sh ran.
+    """
+    client_id = os.getenv("DATASPHERE_CLIENT_ID")
+    client_secret = os.getenv("DATASPHERE_CLIENT_SECRET")
+    base_url = os.getenv("DATASPHERE_BASE_URL")
+    token_url = os.getenv("DATASPHERE_TOKEN_URL")
+
+    if not all([client_id, client_secret, base_url, token_url]):
+        logger.warning("[cli-auth] DATASPHERE_* env vars not all set — skipping CLI login. list_task_chains will be unavailable.")
+        return False
+
+    # Derive authorization URL from token URL
+    auth_url = token_url.replace("/oauth/token", "/oauth/authorize")
+
+    cmd = [
+        "datasphere", "login",
+        "--authorization-flow", "client_credentials",
+        "--force",
+        "--host", base_url,
+        "--client-id", client_id,
+        "--client-secret", client_secret,
+        "--authorization-url", auth_url,
+        "--token-url", token_url,
+    ]
+
+    try:
+        logger.info("[cli-auth] Authenticating Datasphere CLI (client_credentials)...")
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+
+        if process.returncode == 0:
+            logger.info("[cli-auth] Datasphere CLI login OK.")
+            return True
+        else:
+            err = stderr.decode().strip() if stderr else stdout.decode().strip()
+            logger.warning(f"[cli-auth] Datasphere CLI login failed: {err}")
+            return False
+    except asyncio.TimeoutError:
+        logger.warning("[cli-auth] Datasphere CLI login timed out.")
+        return False
+    except FileNotFoundError:
+        logger.warning("[cli-auth] Datasphere CLI not found in PATH.")
+        return False
+    except Exception as e:
+        logger.warning(f"[cli-auth] Datasphere CLI login error: {e}")
+        return False
+
+
 async def main_stdio():
     """Run the MCP server over stdio."""
     await _init_datasphere()
+    await _authenticate_datasphere_cli()
     try:
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
             await server.run(read_stream, write_stream, _init_options())
@@ -8191,6 +8248,7 @@ async def main_http(host: str = "0.0.0.0", port: int = 8000):
     import uvicorn
 
     await _init_datasphere()
+    await _authenticate_datasphere_cli()
 
     # API key authentication
     MCP_API_KEY = os.getenv("MCP_API_KEY")
