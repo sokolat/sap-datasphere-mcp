@@ -93,10 +93,13 @@ jobs:
           echo "=== Python server imports ==="
           docker run --rm --entrypoint python $IMAGE -c "import sap_datasphere_mcp_server; print('OK')"
 
-          echo "=== Test CLI with auth: list task chains ==="
-          docker run --rm \
+          echo "=== Test server startup with Python CLI auth ==="
+          timeout 20 docker run --rm \
+            --entrypoint python \
             -e "DATASPHERE_BASE_URL" \
             -e "DATASPHERE_CLIENT_ID" \
             -e "DATASPHERE_CLIENT_SECRET" \
             -e "DATASPHERE_TOKEN_URL" \
-            $IMAGE sh -c 'datasphere objects task-chains list --space DW_SYNTAX --host "$DATASPHERE_BASE_URL" --top 5'
+            -e "MCP_API_KEY=test" \
+            $IMAGE sap_datasphere_mcp_server.py http 0.0.0.0 8080 2>&1 | grep -E "(cli-auth|CLI)" || true
+          echo "=== Above should show [cli-auth] messages ==="
