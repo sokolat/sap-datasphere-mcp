@@ -7756,8 +7756,10 @@ async def _execute_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
 
                 if process.returncode != 0:
-                    error_msg = stderr.decode().strip() if stderr else "Unknown error"
-                    logger.error(f"CLI error listing task chains: {error_msg}")
+                    err_out = stderr.decode().strip() if stderr else ""
+                    std_out = stdout.decode().strip() if stdout else ""
+                    error_msg = err_out or std_out or f"Exit code {process.returncode}"
+                    logger.error(f"CLI error listing task chains (rc={process.returncode}): {error_msg}")
                     return [types.TextContent(
                         type="text",
                         text=f"Error listing task chains in space '{space_id}': {error_msg}"
