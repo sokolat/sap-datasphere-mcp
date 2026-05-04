@@ -7737,8 +7737,10 @@ async def _execute_tool(name: str, arguments: dict) -> list[types.TextContent]:
         else:
             try:
                 import asyncio
+                base_url = os.getenv("DATASPHERE_BASE_URL", "")
                 cmd = [
                     "datasphere", "objects", "task-chains", "list",
+                    "--host", base_url,
                     "--space", space_id,
                     "--top", str(top),
                     "--skip", str(skip),
