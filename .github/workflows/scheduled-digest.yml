@@ -1,0 +1,34 @@
+name: Scheduled task-chain digest
+
+on:
+  schedule:
+    # 07:00 UTC weekdays. Adjust to your local morning.
+    - cron: "0 7 * * 1-5"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install --no-cache-dir requests
+
+      - name: Invoke agent
+        env:
+          AGENT_URL: ${{ secrets.AGENT_URL }}
+          AGENT_API_KEY: ${{ secrets.AGENT_API_KEY }}
+          DIGEST_PROMPT: ${{ vars.DIGEST_PROMPT }}
+        run: python scripts/scheduled_digest.py
