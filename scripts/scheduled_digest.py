@@ -73,12 +73,36 @@ def extract_reply_text(payload: Any) -> str:
     return json.dumps(payload, indent=2)
 
 
+def build_adaptive_card(text: str) -> dict:
+    """Wrap the reply in a minimal Adaptive Card so Power Automate's
+    `Post card in a chat or channel` action can render it."""
+    return {
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": [
+            {
+                "type": "TextBlock",
+                "text": "SAP Datasphere task-chain digest",
+                "weight": "Bolder",
+                "size": "Medium",
+                "wrap": True,
+            },
+            {
+                "type": "TextBlock",
+                "text": text,
+                "wrap": True,
+            },
+        ],
+    }
+
+
 def post_to_teams(webhook_url: str, text: str, timeout: int) -> None:
     print(f"[digest] forwarding reply to Teams ({len(text)} chars)")
     response = requests.post(
         webhook_url,
         headers={"Content-Type": "application/json"},
-        json={"text": text},
+        json=build_adaptive_card(text),
         timeout=timeout,
     )
     print(f"[digest] Teams HTTP {response.status_code}")
