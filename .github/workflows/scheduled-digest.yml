@@ -31,4 +31,5 @@ jobs:
           AGENT_URL: ${{ secrets.AGENT_URL }}
           AGENT_API_KEY: ${{ secrets.AGENT_API_KEY }}
           DIGEST_PROMPT: ${{ vars.DIGEST_PROMPT }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
         run: python scripts/scheduled_digest.py
