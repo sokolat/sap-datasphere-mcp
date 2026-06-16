@@ -15,7 +15,7 @@ Optional:
   TEAMS_WEBHOOK_URL  — Power Automate trigger URL. If set, the agent reply
                        is POSTed there as {"text": "<reply>"}.
   SESSION_ID         — defaults to digest-YYYY-MM-DD so each day starts fresh
-  TIMEOUT_SECONDS    — HTTP timeout per call, default 300
+  TIMEOUT_SECONDS    — HTTP timeout per call, default 900
 
 Exits non-zero on any failure so the scheduler surfaces it.
 """
@@ -117,7 +117,7 @@ def main() -> int:
     session_id = os.environ.get(
         "SESSION_ID", f"digest-{dt.date.today().isoformat()}"
     )
-    timeout = int(os.environ.get("TIMEOUT_SECONDS", "300"))
+    timeout = int(os.environ.get("TIMEOUT_SECONDS", "900"))
 
     print(f"[digest] POST {agent_url} session={session_id}")
     response = requests.post(
