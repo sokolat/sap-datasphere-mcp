@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """Kicker for the scheduled task-chain digest.
 
-Posts a standing prompt to the agent's invoke endpoint, then forwards the
-agent's reply to a Teams webhook (a Power Automate "When an HTTP request
-is received" flow that fans out to the channel).
+Invokes the agent once per chain (sequential 1-call prompts) to sidestep
+the agent platform's multi-tool-call stall, then concatenates the bullets
+into a single Teams Adaptive Card.
 
 Required env vars:
-  AGENT_URL          — full invoke URL, e.g.
-                       https://studio-api.ai.syntax-rnd.com/api/v1/agents/<id>/invoke
-  AGENT_API_KEY      — x-api-key header value
-  DIGEST_PROMPT      — natural-language instruction for the agent
+  AGENT_URL              — full invoke URL
+  AGENT_API_KEY          — x-api-key header value
+  CHAIN_SPACE            — SAP Datasphere space, e.g. DW_SYNTAX
+  CHAIN_NAMES            — comma-separated chain names
+  CHAIN_PROMPT_TEMPLATE  — prompt template with {chain} and {space} placeholders
 
 Optional:
-  TEAMS_WEBHOOK_URL  — Power Automate trigger URL. If set, the agent reply
-                       is POSTed there as {"text": "<reply>"}.
-  SESSION_ID         — defaults to digest-YYYY-MM-DD so each day starts fresh
-  TIMEOUT_SECONDS    — HTTP timeout per call, default 900
+  TEAMS_WEBHOOK_URL      — Power Automate trigger URL
+  TIMEOUT_SECONDS        — HTTP timeout per call, default 300
 
 Exits non-zero on any failure so the scheduler surfaces it.
 """
@@ -26,12 +25,13 @@ import json
 import os
 import sys
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 
 
-def env(name: str, default: str | None = None) -> str:
-    value = os.environ.get(name, default)
+def env(name: str) -> str:
+    value = os.environ.get(name)
     if not value:
         sys.stderr.write(f"missing required env var: {name}\n")
         sys.exit(2)
@@ -39,14 +39,8 @@ def env(name: str, default: str | None = None) -> str:
 
 
 def extract_reply_text(payload: Any) -> str:
-    """Pull the human-readable reply out of common agent response shapes.
-
-    Falls back to a pretty-printed JSON dump so the Teams card always
-    contains something useful, even when the schema is unfamiliar.
-    """
     if isinstance(payload, str):
         return payload
-
     if isinstance(payload, dict):
         for key in ("output", "response", "result", "content", "answer"):
             value = payload.get(key)
@@ -61,7 +55,6 @@ def extract_reply_text(payload: Any) -> str:
                 joined = "\n".join(p for p in parts if p)
                 if joined.strip():
                     return joined
-
         messages = payload.get("messages")
         if isinstance(messages, list) and messages:
             last = messages[-1]
@@ -69,13 +62,61 @@ def extract_reply_text(payload: Any) -> str:
                 content = last.get("content")
                 if isinstance(content, str):
                     return content
-
     return json.dumps(payload, indent=2)
 
 
+def invoke_agent_for_chain(
+    agent_url: str,
+    api_key: str,
+    prompt: str,
+    session_id: str,
+    timeout: int,
+) -> str:
+    response = requests.post(
+        agent_url,
+        headers={"Content-Type": "application/json", "x-api-key": api_key},
+        json={
+            "input": [{"type": "text", "text": prompt}],
+            "session_id": session_id,
+        },
+        timeout=timeout,
+    )
+    print(f"[digest]   HTTP {response.status_code}")
+    response.raise_for_status()
+    try:
+        body = response.json()
+    except ValueError:
+        body = response.text
+    return extract_reply_text(body).strip()
+
+
+def status_breakdown(bullets: list[str]) -> str:
+    green = failed = running = other = 0
+    for bullet in bullets:
+        upper = bullet.upper()
+        if "FAILED" in upper:
+            failed += 1
+        elif "RUNNING" in upper:
+            running += 1
+        elif "COMPLETED" in upper or "SUCCESS" in upper:
+            green += 1
+        else:
+            other += 1
+    if failed == 0 and running == 0 and other == 0:
+        return "all green"
+    parts = []
+    if failed:
+        parts.append(f"{failed} failed")
+    if running:
+        parts.append(f"{running} running")
+    if green:
+        parts.append(f"{green} green")
+    if other:
+        parts.append(f"{other} unknown")
+    return ", ".join(parts)
+
+
 def build_adaptive_card(text: str) -> dict:
-    """Wrap the reply in a minimal Adaptive Card so Power Automate's
-    `Post card in a chat or channel` action can render it."""
     return {
         "type": "AdaptiveCard",
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
@@ -88,17 +129,13 @@ def build_adaptive_card(text: str) -> dict:
                 "size": "Medium",
                 "wrap": True,
             },
-            {
-                "type": "TextBlock",
-                "text": text,
-                "wrap": True,
-            },
+            {"type": "TextBlock", "text": text, "wrap": True},
         ],
     }
 
 
 def post_to_teams(webhook_url: str, text: str, timeout: int) -> None:
-    print(f"[digest] forwarding reply to Teams ({len(text)} chars)")
+    print(f"[digest] forwarding to Teams ({len(text)} chars)")
     response = requests.post(
         webhook_url,
         headers={"Content-Type": "application/json"},
@@ -112,37 +149,36 @@ def post_to_teams(webhook_url: str, text: str, timeout: int) -> None:
 def main() -> int:
     agent_url = env("AGENT_URL")
     api_key = env("AGENT_API_KEY")
-    prompt = env("DIGEST_PROMPT")
+    space = env("CHAIN_SPACE")
+    chain_names = [c.strip() for c in env("CHAIN_NAMES").split(",") if c.strip()]
+    prompt_template = env("CHAIN_PROMPT_TEMPLATE")
     teams_webhook = os.environ.get("TEAMS_WEBHOOK_URL", "").strip()
-    session_id = os.environ.get(
-        "SESSION_ID", f"digest-{dt.date.today().isoformat()}"
+    timeout = int(os.environ.get("TIMEOUT_SECONDS", "300"))
+    today = dt.date.today().isoformat()
+
+    bullets: list[str] = []
+    for chain in chain_names:
+        prompt = prompt_template.format(chain=chain, space=space)
+        session_id = f"digest-{today}-{chain}"
+        print(f"[digest] POST chain={chain} session={session_id}")
+        bullet = invoke_agent_for_chain(
+            agent_url, api_key, prompt, session_id, timeout
+        )
+        print(f"[digest]   {bullet}")
+        bullets.append(bullet)
+
+    now_montreal = dt.datetime.now(ZoneInfo("America/Montreal")).strftime(
+        "%H:%M %Z"
     )
-    timeout = int(os.environ.get("TIMEOUT_SECONDS", "900"))
-
-    print(f"[digest] POST {agent_url} session={session_id}")
-    response = requests.post(
-        agent_url,
-        headers={"Content-Type": "application/json", "x-api-key": api_key},
-        json={
-            "input": [{"type": "text", "text": prompt}],
-            "session_id": session_id,
-        },
-        timeout=timeout,
+    header = (
+        f"**Audited {len(chain_names)} chains at {now_montreal} — "
+        f"{status_breakdown(bullets)}.**"
     )
-
-    print(f"[digest] Agent HTTP {response.status_code}")
-    try:
-        body = response.json()
-        print(json.dumps(body, indent=2)[:4000])
-    except ValueError:
-        body = response.text
-        print(body[:4000])
-
-    response.raise_for_status()
+    report = header + "\n\n**Chains**\n" + "\n".join(bullets)
+    print("\n[digest] final report:\n" + report + "\n")
 
     if teams_webhook:
-        reply_text = extract_reply_text(body)
-        post_to_teams(teams_webhook, reply_text, timeout)
+        post_to_teams(teams_webhook, report, timeout)
     else:
         print("[digest] TEAMS_WEBHOOK_URL not set — skipping Teams forward.")
 
