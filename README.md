@@ -2,17 +2,19 @@
 
 MCP server exposing SAP Datasphere **task-monitoring** tools over Streamable HTTP. Built for remote deployment behind a TLS-terminating proxy so MCP clients (e.g., SAP Studio) can call it over the network.
 
-Fork of [MarioDeFelipe/sap-datasphere-mcp](https://github.com/MarioDeFelipe/sap-datasphere-mcp), trimmed to the task-monitoring surface. Other tools remain in the codebase but are disabled — see `_TASK_MONITORING_TOOLS` in `sap_datasphere_mcp_server.py`.
+Fork of [MarioDeFelipe/sap-datasphere-mcp](https://github.com/MarioDeFelipe/sap-datasphere-mcp) — extended, then narrowed. Upstream covered task monitoring with `get_task_status` alone; this fork adds run history, log drill-down, chain discovery, and execution triggering, then hides the remaining upstream tools behind `_TASK_MONITORING_TOOLS` in `sap_datasphere_mcp_server.py` so the agent sees only the five it needs.
+
+Chain discovery has no REST endpoint on the Datasphere API, so `list_task_chains` shells out to `@sap/datasphere-cli` instead. The container carries Node 20 and the CLI, and `docker-entrypoint.sh` logs it in with `client_credentials` at startup so the tool is headless and ready on the first call. The other four tools go straight to REST.
 
 ## Exposed Tools
 
-| Tool | Purpose |
-|------|---------|
-| `list_task_chains` | List task chains in a space |
-| `get_task_status` | Latest status of a specific task chain |
-| `get_task_history` | Historical runs of a task chain |
-| `get_task_log` | Log output of a specific run |
-| `run_task_chain` | Trigger execution of a task chain |
+| Tool | Purpose | Backed by |
+|------|---------|-----------|
+| `list_task_chains` | List task chains in a space | `@sap/datasphere-cli` (no REST equivalent) |
+| `get_task_status` | Latest status of a specific task chain | REST `/api/v1/datasphere/tasks/logs/{space}/objects/{task}` |
+| `get_task_history` | Historical runs of a task chain | REST, same path, paginated |
+| `get_task_log` | Log output of a specific run | REST `/api/v1/datasphere/tasks/logs/{space}/{log_id}` |
+| `run_task_chain` | Trigger execution of a task chain | REST `POST /api/v1/datasphere/tasks/chains/{space}/run/{object_id}` |
 
 ## Quick Start (prebuilt image)
 
@@ -24,7 +26,7 @@ docker run -d -p 8080:8080 --env-file .env ghcr.io/sokolat/sap-datasphere-mcp:la
 curl http://localhost:8080/health   # {"status":"ok"}
 ```
 
-The entrypoint (`docker-entrypoint.sh`) logs the Datasphere CLI in with `client_credentials` before the server starts, so `list_task_chains` works on the first call. If the login fails it warns and continues — the four REST-backed tools still work.
+If the entrypoint's CLI login fails it warns and continues: `list_task_chains` errors at call time, the four REST-backed tools keep working.
 
 ## Cloud Deployment (GitHub Actions + Kubernetes)
 
