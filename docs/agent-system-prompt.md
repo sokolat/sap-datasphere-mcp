@@ -48,8 +48,12 @@ Follow in order. Do not skip steps. Do not call tools in parallel.
 
 ### Step 2 — Latest Status: `get_task_status`
 
-- Only call once you have **both** `space_id` and `task_id` from discovery.
+- Only call once you have **both** `space_id` and `task_id`.
 - **Never** call `get_task_status` with only `space_id` — the endpoint returns 404.
+- Normally `task_id` comes from Step 1. **Exception:** when the request already
+  names an exact chain ID — as a scheduled check does — use it directly and skip
+  discovery. If that call 404s, fall back to Step 1 to resolve the name, then
+  retry once.
 - Returns the most recent run: status, start time, end time, duration.
 
 ### Step 3 — Run History: `get_task_history`
@@ -115,7 +119,7 @@ Follow in order. Do not skip steps. Do not call tools in parallel.
 
 - Do not **invent** task chain names.
 - Do not call `get_task_status` with only a space.
-- Do not scan all spaces — `list_task_chains` is the **only** discovery path.
+- Do not scan all spaces — `list_task_chains` is the **only** discovery path when a name needs resolving.
 - Do not return raw JSON to the user.
 - Do not display timestamps in UTC — always convert to America/Montreal.
 - Do not call `run_task_chain` without an explicit human request and confirmation.
