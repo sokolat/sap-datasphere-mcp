@@ -105,6 +105,10 @@ See `.env.example` for the full list.
 
 Server speaks plain HTTP. Terminate TLS at a proxy or load balancer (nginx, Cloudflare, Cloud Run, ECS Fargate, Fly.io).
 
+### Agent system prompt
+
+The system prompt driving the monitoring agent lives at [`docs/agent-system-prompt.md`](docs/agent-system-prompt.md) — tool order, disambiguation rules, timezone handling, and the sequential-call constraint. Paste it into your agent platform (Copilot Studio, Claude Desktop project instructions, etc.) alongside the MCP client config below.
+
 ### Client configuration
 
 ```
