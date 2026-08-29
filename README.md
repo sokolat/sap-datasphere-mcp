@@ -50,7 +50,7 @@ pip install 'sap-datasphere-mcp<2'
 
 ## 🆕 What's New (v1.3.0 — lean tool profile)
 
-- **Leaner agent-facing tool surface** — the server now advertises **39 tools by default** (down from 49) by hiding redundant/overlapping metadata-discovery tools and developer diagnostics. Tool *handlers* are unchanged; only what's advertised to the MCP client is filtered, which improves LLM tool-selection accuracy. Controlled by two env vars:
+- **Leaner agent-facing tool surface** — the server now advertises **40 tools by default** (down from 50) by hiding redundant/overlapping metadata-discovery tools and developer diagnostics. Tool *handlers* are unchanged; only what's advertised to the MCP client is filtered, which improves LLM tool-selection accuracy. Controlled by two env vars:
   - `DATASPHERE_TOOL_PROFILE` — `lean` (default) or `full` (advertise everything)
   - `DATASPHERE_EXPOSE_DIAGNOSTICS` — `false` (default) or `true` (advertise the `test_phase*` diagnostic tools)
 
@@ -201,7 +201,7 @@ curl -N -X POST http://127.0.0.1:8080/mcp/ \
 - ✅ Fuzzy table name matching
 - ✅ LIMIT pushdown optimization
 
-**Result:** **39 tools advertised by default** (49 with diagnostics enabled) with a production-ready smart query engine supporting all SQL patterns
+**Result:** **40 tools advertised by default** (50 with diagnostics enabled) with a production-ready smart query engine supporting all SQL patterns
 
 **See [CHANGELOG_v1.0.9.md](CHANGELOG_v1.0.9.md) for complete details.**
 
@@ -317,7 +317,7 @@ query_analytical_data(
 
 ---
 
-## 🛠️ Complete Tool Catalog (39 advertised by default, 49 with diagnostics)
+## 🛠️ Complete Tool Catalog (40 advertised by default, 50 with diagnostics)
 
 ### 🏆 Real Data Success Summary
 
@@ -1076,7 +1076,7 @@ touched, so the LLM client can see what was withheld.
 - `telemetry.py` - Request tracking and metrics
 
 **MCP Server:**
-- `sap_datasphere_mcp_server.py` - Main server (39 tools advertised, 49 with diagnostics)
+- `sap_datasphere_mcp_server.py` - Main server (40 tools advertised, 50 with diagnostics)
 
 ---
 
@@ -1193,7 +1193,7 @@ sap-datasphere-mcp/
 │   ├── OAUTH_SETUP.md                  # OAuth setup guide
 │   ├── TROUBLESHOOTING_CLAUDE_DESKTOP.md
 │   └── OAUTH_IMPLEMENTATION_STATUS.md
-├── 📄 sap_datasphere_mcp_server.py     # Main MCP server (39 lean / 49 full)
+├── 📄 sap_datasphere_mcp_server.py     # Main MCP server (40 lean / 50 full)
 ├── 📄 odata_v4_annotations.py          # OData V4 CSDL annotation reader (V2 fallback)
 ├── 📄 odata_filter.py                  # $filter parsing, validation, capability gating
 ├── 📄 asset_capability.py              # Per-asset countability / filter profile
