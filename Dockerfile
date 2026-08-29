@@ -11,11 +11,23 @@ LABEL version="1.0.0"
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies. Debian bookworm ships Node 18, but
+# @sap/datasphere-cli needs >= 20, so take Node 20 from NodeSource.
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     curl \
+    ca-certificates \
+    gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# The CLI-backed tools (list_task_chains, the dbusers family) shell out to
+# `datasphere`, which is otherwise absent from the image and makes those tools
+# fail at runtime with "CLI not found". Authentication is still the operator's
+# job: run `datasphere login` or mount an existing CLI profile.
+RUN npm install -g @sap/datasphere-cli && \
+    datasphere --version
 
 # Copy requirements first (for better layer caching)
 COPY requirements.txt .
