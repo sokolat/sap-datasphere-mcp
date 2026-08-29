@@ -86,6 +86,7 @@ class ToolValidators:
             "run_task_chain": ToolValidators._run_task_chain_rules,
             "get_task_log": ToolValidators._get_task_log_rules,
             "get_task_history": ToolValidators._get_task_history_rules,
+            "list_task_chains": ToolValidators._list_task_chains_rules,
             "test_analytical_endpoints": ToolValidators._test_analytical_endpoints_rules,
             "test_phase67_endpoints": ToolValidators._test_phase67_endpoints_rules,
             "test_phase8_endpoints": ToolValidators._test_phase8_endpoints_rules,
@@ -1096,6 +1097,20 @@ class ToolValidators:
     @staticmethod
     def _get_task_history_rules() -> List[ValidationRule]:
         return ToolValidators._space_and_asset_rules(asset_param="object_id")
+
+    @staticmethod
+    def _list_task_chains_rules() -> List[ValidationRule]:
+        return [
+            ValidationRule(
+                param_name="space_id",
+                validation_type=ValidationType.SPACE_ID,
+                required=True,
+                min_length=2,
+                max_length=64,
+            ),
+            ValidationRule(param_name="top", validation_type=ValidationType.INTEGER, required=False),
+            ValidationRule(param_name="skip", validation_type=ValidationType.INTEGER, required=False),
+        ]
 
     @staticmethod
     def _get_task_log_rules() -> List[ValidationRule]:

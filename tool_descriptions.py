@@ -1564,6 +1564,63 @@ This tool combines space_id and asset_id into an OData compound key format:
         }
 
     @staticmethod
+    def list_task_chains() -> Dict:
+        """Enhanced description for list_task_chains tool"""
+        return {
+            "description": """List the task chains defined in a SAP Datasphere space.
+
+**Use this tool when:**
+- You need to discover task chain names in a space
+- The user names a task chain but you do not know its exact technical name
+- get_task_status or get_task_history returns nothing for a space
+- The user asks "what task chains exist here?" or "what pipelines are in FINANCE?"
+
+**This is the discovery tool for task chains.** Use it before get_task_status or
+get_task_history whenever you do not already hold an exact chain name.
+
+**What you'll get:**
+- The technical name and status of every task chain *defined* in the space
+- Chains that have never been executed, which the Tasks REST API cannot report
+
+**Parameters:**
+- space_id (required): The space to list task chains from
+- top: Maximum results per page (default 25)
+- skip: Results to skip, for pagination (default 0)
+
+**Pagination:** The response carries count, skip, top and has_more. When has_more
+is true, call again with skip set to skip + top.
+
+**Example queries:**
+- "List all task chains in DW_SYNTAX"
+- "What pipelines exist in FINANCE?"
+
+**Note:** Backed by the Datasphere CLI (`datasphere objects task-chains list`),
+not the REST API — chain definitions are not exposed over REST. The CLI must be
+installed and authenticated.
+""",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "space_id": {
+                        "type": "string",
+                        "description": "The space ID to list task chains from (e.g., 'DW_SYNTAX', 'FINANCE'). Must be uppercase."
+                    },
+                    "top": {
+                        "type": "integer",
+                        "description": "Maximum number of task chains to return per page (default 25).",
+                        "default": 25
+                    },
+                    "skip": {
+                        "type": "integer",
+                        "description": "Number of task chains to skip, for pagination (default 0). Use with top to page through results.",
+                        "default": 0
+                    }
+                },
+                "required": ["space_id"]
+            }
+        }
+
+    @staticmethod
     def get_all_enhanced_descriptions() -> Dict[str, Dict]:
         """Get all enhanced tool descriptions"""
         return {
@@ -1590,5 +1647,6 @@ This tool combines space_id and asset_id into an OData compound key format:
             # Task Management Tools (v1.0.12)
             "run_task_chain": ToolDescriptions.run_task_chain(),
             "get_task_log": ToolDescriptions.get_task_log(),
-            "get_task_history": ToolDescriptions.get_task_history()
+            "get_task_history": ToolDescriptions.get_task_history(),
+            "list_task_chains": ToolDescriptions.list_task_chains()
         }

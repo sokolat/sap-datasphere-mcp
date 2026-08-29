@@ -1184,6 +1184,11 @@ async def handle_list_tools() -> list[Tool]:
             name="get_task_history",
             description=enhanced["get_task_history"]["description"],
             input_schema=enhanced["get_task_history"]["inputSchema"]
+        ),
+        Tool(
+            name="list_task_chains",
+            description=enhanced["list_task_chains"]["description"],
+            input_schema=enhanced["list_task_chains"]["inputSchema"]
         )
         # Phase 6 & 7 tools removed - endpoints not available as REST APIs (return HTML instead of JSON)
     ]
@@ -8145,6 +8150,138 @@ async def _execute_tool(name: str, arguments: dict) -> list[types.TextContent]:
                          f"2. No execution history available\n"
                          f"3. Insufficient permissions to view task logs\n"
                          f"4. Network or authentication issues"
+                )]
+
+    elif name == "list_task_chains":
+        space_id = arguments["space_id"]
+        top = arguments.get("top", 25)
+        skip = arguments.get("skip", 0)
+
+        if DATASPHERE_CONFIG["use_mock_data"]:
+            from mock_data import get_mock_task_chains
+            task_chains = get_mock_task_chains(space_id)
+            paginated = task_chains[skip:skip + top]
+            chains = [tc["object_id"] for tc in paginated]
+            result = {
+                "space_id": space_id,
+                "task_chains": chains,
+                "count": len(chains),
+                "skip": skip,
+                "top": top,
+                "has_more": (skip + len(chains)) < len(task_chains)
+            }
+            return [types.TextContent(
+                type="text",
+                text=f"Task chains in space '{space_id}':\n\n{json.dumps(result, indent=2)}\n\n"
+                     f"Note: This is mock data. Set USE_MOCK_DATA=false for real task chains."
+            )]
+        else:
+            # Chain *definitions* have no REST endpoint -- the Tasks API only
+            # reports chains that have already run. The CLI is the only way to
+            # see a chain that has never been executed, so shell out to it.
+            try:
+                base_url = DATASPHERE_CONFIG["base_url"]
+                cmd = [
+                    "datasphere", "objects", "task-chains", "list",
+                    "--host", base_url,
+                    "--space", space_id,
+                    "--top", str(top),
+                    "--skip", str(skip),
+                    "--select", "technicalName,status"
+                ]
+                logger.info("Executing CLI: datasphere objects task-chains list --space %s", space_id)
+
+                # Async subprocess rather than subprocess.run: this handler is
+                # async, and a 30s blocking call would stall the event loop for
+                # every other in-flight request.
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+
+                if process.returncode != 0:
+                    err_out = stderr.decode().strip() if stderr else ""
+                    std_out = stdout.decode().strip() if stdout else ""
+                    error_msg = err_out or std_out or f"Exit code {process.returncode}"
+                    logger.error(
+                        "CLI failed listing task chains (rc=%s): %s",
+                        process.returncode, error_msg
+                    )
+                    return [types.TextContent(
+                        type="text",
+                        text=f"Error listing task chains in space '{space_id}': {error_msg}\n\n"
+                             f"Troubleshooting:\n"
+                             f"1. Ensure the datasphere CLI is installed and in PATH\n"
+                             f"2. Verify the CLI is authenticated (run: datasphere login)\n"
+                             f"3. Check the space ID is correct (run: datasphere spaces list)"
+                    )]
+
+                output = stdout.decode().strip()
+                if not output:
+                    return [types.TextContent(
+                        type="text",
+                        text=f"No task chains found in space '{space_id}'."
+                    )]
+
+                try:
+                    chains = json.loads(output)
+                except json.JSONDecodeError:
+                    # CLI output format is not contractual; hand back what it said
+                    # rather than failing the call.
+                    return [types.TextContent(
+                        type="text",
+                        text=f"Task chains in space '{space_id}':\n\n{output}"
+                    )]
+
+                chain_names = []
+                if isinstance(chains, list):
+                    for chain in chains:
+                        if isinstance(chain, dict):
+                            chain_names.append({
+                                "name": chain.get("technicalName", chain.get("name", "unknown")),
+                                "status": chain.get("status", "unknown")
+                            })
+                        else:
+                            chain_names.append({"name": str(chain), "status": "unknown"})
+
+                result = {
+                    "space_id": space_id,
+                    "task_chains": chain_names,
+                    "count": len(chain_names),
+                    "skip": skip,
+                    "top": top,
+                    # The CLI reports no total, so a full page is the only
+                    # signal that another page may exist.
+                    "has_more": len(chain_names) == top
+                }
+
+                return [types.TextContent(
+                    type="text",
+                    text=f"Task chains in space '{space_id}' ({len(chain_names)} found):\n\n"
+                         f"{json.dumps(result, indent=2)}"
+                )]
+
+            except asyncio.TimeoutError:
+                logger.error("CLI command timed out listing task chains")
+                return [types.TextContent(
+                    type="text",
+                    text="Error: datasphere CLI command timed out after 30 seconds.\n\n"
+                         "The space may hold many task chains, or the CLI is unresponsive."
+                )]
+            except FileNotFoundError:
+                return [types.TextContent(
+                    type="text",
+                    text="Error: datasphere CLI not found.\n\n"
+                         "Install it with: npm install -g @sap/datasphere-cli\n"
+                         "Then authenticate with: datasphere login"
+                )]
+            except Exception as e:
+                logger.error(f"Unexpected error listing task chains: {e}")
+                return [types.TextContent(
+                    type="text",
+                    text=f"Unexpected error listing task chains: {str(e)}"
                 )]
 
     # Phase 6 & 7 tool handlers removed (tools not available as REST APIs)

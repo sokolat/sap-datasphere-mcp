@@ -163,10 +163,10 @@ def test_server_reports_the_package_version_not_the_sdk_version():
 
 @pytest.mark.parametrize(
     "profile,diagnostics,expected",
-    [("lean", "false", 39), ("full", "false", 46), ("full", "true", 49)],
+    [("lean", "false", 40), ("full", "false", 47), ("full", "true", 50)],
 )
 def test_tool_profile_counts(monkeypatch, profile, diagnostics, expected):
-    """lean-39 is the shipped default and must not silently change."""
+    """lean-40 is the shipped default and must not silently change."""
     monkeypatch.setenv("DATASPHERE_TOOL_PROFILE", profile)
     monkeypatch.setenv("DATASPHERE_EXPOSE_DIAGNOSTICS", diagnostics)
     import sap_datasphere_mcp_server as srv

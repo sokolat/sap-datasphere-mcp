@@ -476,6 +476,14 @@ class AuthorizationManager:
             description="Get task chain execution history",
             risk_level="low"
         ),
+        "list_task_chains": ToolPermission(
+            tool_name="list_task_chains",
+            permission_level=PermissionLevel.READ,
+            category=ToolCategory.METADATA,
+            requires_consent=False,
+            description="List the task chains defined in a space",
+            risk_level="low"
+        ),
 
         # Phase 6 & 7 tools removed (endpoints not available as REST APIs)
     }
